@@ -561,9 +561,10 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
 
   // ---------- Map ----------
   const map = L.map("map", { zoomControl: false, attributionControl: true, tap: true }).setView(HOME.center, HOME.zoom);
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
-    subdomains: "abcd", maxZoom: 20,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>',
+  const TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+  L.tileLayer(TILE_URL, {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
   }).addTo(map);
   const areaLayer = L.layerGroup().addTo(map);
   for (const [t, lat, lng] of AREA_LABELS) {
@@ -1022,7 +1023,7 @@ Use the event's own name as title (short, no emojis). Never guess a date or time
 
     // mini map
     miniMap = L.map(mm, { zoomControl: true, attributionControl: false }).setView(pinLL || HOME.center, pinLL ? 17 : 15);
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", { subdomains: "abcd", maxZoom: 20 }).addTo(miniMap);
+    L.tileLayer(TILE_URL, { maxZoom: 19 }).addTo(miniMap);
     const pinIcon = L.divIcon({ className: "", iconSize: [0, 0], html: `<div class="pin-wrap selected" style="--c:var(--hot)"><span class="pin"></span></div>` });
     let marker = null;
     const setPin = (ll, zoom) => {
