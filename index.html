@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>MotiveMap · Durham</title>
 <meta name="description" content="Every student event in Durham on one map. Post one from a screenshot, see what's on tonight.">
-<meta name="theme-color" content="#ffffff">
+<meta name="theme-color" content="#0f0d14">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
@@ -17,14 +17,16 @@
   --card: #ffffff;
   --soft: #eef0f5;
   --line: #e0e2ea;
-  --ink: #17151f;
-  --muted: #646071;
-  --hot: #d6336c;       /* accent */
+  --ink: #0f0d14;       /* black */
+  --muted: #625d70;
+  --hot: #7c3aed;       /* purple accent */
+  --hot-deep: #5b21b6;
+  --hot-soft: #f1ebfe;
   --hot-ink: #ffffff;
   --party: #e0336f;
   --social: #e08600;
   --sport: #1c9b5a;
-  --society: #6a55dd;
+  --society: #2563eb;
   --other: #7b7689;
   --danger: #c8372d;
   --f-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
@@ -69,14 +71,14 @@ button { cursor: pointer; }
 .mark {
   width: 28px; height: 28px; flex: none;
   border-radius: 50% 50% 50% 4px; transform: rotate(-45deg);
-  background: var(--hot); display: grid; place-items: center;
+  background: var(--ink); display: grid; place-items: center;
 }
-.mark span { width: 9px; height: 9px; border-radius: 50%; background: var(--card); }
+.mark span { width: 10px; height: 10px; border-radius: 50%; background: var(--hot); }
 .brand { font-family: var(--f-display); font-weight: 800; font-size: 22px; letter-spacing: -0.02em; line-height: 1; }
-.city { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 3px 8px; }
+.city { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--hot-ink); border: 1px solid var(--ink); background: var(--ink); border-radius: 999px; padding: 3px 8px; }
 .spacer { flex: 1; }
 .pillbtn {
-  border: 1px solid var(--line); background: var(--card); border-radius: 999px;
+  border: 1px solid var(--ink); background: var(--ink); color: var(--hot-ink); border-radius: 999px;
   padding: 7px 12px; font-size: 13px; font-weight: 600;
   display: inline-flex; align-items: center; gap: 6px;
   box-shadow: 0 1px 2px rgba(23,21,31,.06);
@@ -154,8 +156,19 @@ button { cursor: pointer; }
 #sheet.expanded { height: 76%; }
 .sheethead {
   padding-left: var(--gl); padding-right: var(--gr); padding-block: 8px 10px;
-  display: grid; gap: 8px; border: 0; background: none; text-align: left; width: 100%;
+  display: grid; gap: 10px;
 }
+.grabbtn { display: grid; gap: 8px; border: 0; background: none; text-align: left; width: 100%; padding: 0; }
+.searchbox { position: relative; display: flex; align-items: center; }
+.searchbox svg { position: absolute; left: 12px; width: 17px; height: 17px; color: var(--muted); pointer-events: none; }
+.searchbox input {
+  width: 100%; min-width: 0; border: 1px solid var(--line); background: var(--soft);
+  border-radius: 999px; padding: 10px 40px 10px 38px; font-size: 15px;
+}
+.searchbox input:focus { outline: none; border-color: var(--hot); background: var(--card); box-shadow: 0 0 0 3px var(--hot-soft); }
+.searchbox input::-webkit-search-cancel-button { display: none; }
+.searchbox .clear { position: absolute; right: 6px; width: 30px; height: 30px; border-radius: 50%; border: 0; background: var(--line); font-size: 16px; line-height: 1; }
+.searchnote { font-size: 12.5px; color: var(--muted); margin: -2px 0 0; }
 .grab { width: 40px; height: 5px; border-radius: 3px; background: var(--line); justify-self: center; }
 .sheettitle { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .sheettitle h2 { margin: 0; font-family: var(--f-display); font-weight: 800; font-size: 20px; letter-spacing: -0.01em; }
@@ -170,7 +183,7 @@ button { cursor: pointer; }
   text-align: left; border: 1px solid var(--line); background: var(--card);
   border-radius: 16px; padding: 10px 12px; width: 100%;
 }
-.item:hover { border-color: #c9ccd8; }
+.item:hover { border-color: var(--hot); }
 .when { display: grid; gap: 1px; font-family: var(--f-mono); }
 .when b { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
 .when strong { font-size: 16px; font-weight: 500; font-variant-numeric: tabular-nums; }
@@ -179,7 +192,7 @@ button { cursor: pointer; }
 .what .s { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
 .what .s .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .goingpill { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.goingpill.me { color: var(--hot); font-weight: 700; }
+.goingpill.me { color: var(--hot-deep); font-weight: 700; }
 .empty { border: 1px dashed #c9ccd8; border-radius: 16px; padding: 18px; color: var(--muted); display: grid; gap: 6px; }
 .empty strong { color: var(--ink); font-family: var(--f-display); font-size: 17px; }
 
@@ -189,7 +202,7 @@ button { cursor: pointer; }
   border: 0; background: var(--hot); color: var(--hot-ink); border-radius: 999px;
   padding: 14px 20px; font-weight: 700; font-size: 15px;
   display: inline-flex; align-items: center; gap: 8px;
-  box-shadow: 0 8px 24px rgba(214,51,108,.35);
+  box-shadow: 0 8px 24px rgba(124,58,237,.38);
 }
 #fab svg { width: 18px; height: 18px; }
 
@@ -330,10 +343,17 @@ form.eventform { display: grid; gap: 12px; }
   <div class="banner" id="banner" hidden></div>
 
   <section id="sheet" aria-label="Events">
-    <button class="sheethead" id="sheethead" aria-expanded="false">
-      <span class="grab" aria-hidden="true"></span>
-      <span class="sheettitle"><h2 id="sheetTitle">This week</h2><span id="sheetCount">Loading…</span></span>
-    </button>
+    <div class="sheethead">
+      <button class="grabbtn" id="sheethead" aria-expanded="false" aria-label="Show more of the events list">
+        <span class="grab" aria-hidden="true"></span>
+        <span class="sheettitle"><h2 id="sheetTitle">This week</h2><span id="sheetCount">Loading…</span></span>
+      </button>
+      <div class="searchbox" role="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+        <input id="q" type="search" placeholder="Search events, venues, hosts…" autocomplete="off" enterkeyhint="search" aria-label="Search events">
+        <button class="clear" id="qClear" type="button" aria-label="Clear search" hidden>×</button>
+      </div>
+    </div>
     <div id="list"></div>
   </section>
 
@@ -433,7 +453,7 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
     party:   { label: "Party",   color: "#e0336f" },
     social:  { label: "Social",  color: "#e08600" },
     sport:   { label: "Sport",   color: "#1c9b5a" },
-    society: { label: "Society", color: "#6a55dd" },
+    society: { label: "Society", color: "#2563eb" },
     other:   { label: "Other",   color: "#7b7689" },
   };
   const TIMES = [
@@ -525,7 +545,7 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
   };
 
   // ---------- State ----------
-  const state = { events: [], going: new Map(), loaded: false, time: "week", cats: new Set(), selected: null };
+  const state = { events: [], going: new Map(), loaded: false, time: "week", cats: new Set(), selected: null, q: "" };
   function goingCount(id) { return (state.going.get(id) || new Set()).size; }
   const iAmGoing = id => (state.going.get(id) || new Set()).has(DEVICE);
   const isMine = id => !!store.get("mm_tokens", {})[id];
@@ -557,7 +577,30 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
     if (state.time === "week") return start - now < 7 * 864e5;
     return start < londonDate(londonParts(new Date(+now + 864e5)).date, "06:00");
   }
-  const visibleEvents = () => state.events.filter(e => inTime(e)).filter(e => !state.cats.size || state.cats.has(catOf(e))).sort((a, b) => new Date(a.start_at) - new Date(b.start_at));
+  const norm = s => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[’']/g, "");
+  function haystack(e) {
+    const d = new Date(e.start_at);
+    const parts = [e.title, e.venue_name, e.host, e.description, e.price, CATS[catOf(e)].label,
+      e.is_private ? "house party private" : e.address,
+      Number.isNaN(+d) ? "" : fmt(d, { weekday: "long" }) + " " + fmt(d, { day: "numeric", month: "long" }),
+      dayKey(d) === dayKey(new Date()) ? "today tonight" : ""];
+    const p = PLACE_BY_NAME.get(String(e.venue_name || "").toLowerCase());
+    if (p) parts.push(p.aliases.join(" "));
+    return norm(parts.join(" "));
+  }
+  function matchesQuery(e) {
+    const words = norm(state.q).split(/\s+/).filter(Boolean);
+    if (!words.length) return true;
+    const hay = haystack(e);
+    return words.every(w => hay.includes(w));
+  }
+  const searching = () => state.q.trim().length > 0;
+  // While searching, look through all upcoming events, not just the chosen time window
+  const visibleEvents = () => state.events
+    .filter(e => { if (!searching()) return inTime(e); const t = state.time; state.time = "all"; const ok = inTime(e); state.time = t; return ok; })
+    .filter(e => !state.cats.size || state.cats.has(catOf(e)))
+    .filter(matchesQuery)
+    .sort((a, b) => new Date(a.start_at) - new Date(b.start_at));
 
   // ---------- Map ----------
   const map = L.map("map", { zoomControl: false, attributionControl: true, tap: true }).setView(HOME.center, HOME.zoom);
@@ -665,12 +708,14 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
   function renderList() {
     const list = $("list"); list.textContent = "";
     const evs = visibleEvents();
-    $("sheetTitle").textContent = TIMES.find(t => t.id === state.time).label;
-    $("sheetCount").textContent = state.loaded ? `${evs.length} event${evs.length === 1 ? "" : "s"}` : "Loading…";
+    $("sheetTitle").textContent = searching() ? "Search" : TIMES.find(t => t.id === state.time).label;
+    $("sheetCount").textContent = state.loaded ? `${evs.length} ${searching() ? "match" + (evs.length === 1 ? "" : "es") : "event" + (evs.length === 1 ? "" : "s")}` : "Loading…";
     if (!state.loaded) return;
+    if (searching()) list.appendChild(h("p", "searchnote", "Showing all upcoming events" + (state.cats.size ? " in the chosen categories" : "") + "."));
     if (!evs.length) {
       const box = h("div", "empty");
-      if (!state.events.length) box.append(h("strong", null, "No motives yet"), h("span", null, "Tap Add event to put the first one on the map. A screenshot of the poster is enough."));
+      if (searching()) box.append(h("strong", null, `Nothing matches "${state.q.trim()}"`), h("span", null, "Try a venue, a college nickname like Cuth's, a host, or a day like Friday."));
+      else if (!state.events.length) box.append(h("strong", null, "No motives yet"), h("span", null, "Tap Add event to put the first one on the map. A screenshot of the poster is enough."));
       else box.append(h("strong", null, "Nothing matches"), h("span", null, "Try All upcoming, or clear the category filters."));
       list.appendChild(box); return;
     }
@@ -689,6 +734,20 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
     }
   }
   function renderAll() { renderList(); drawPins(); refreshCard(); }
+
+  // ---------- Search ----------
+  const qInput = $("q"), qClear = $("qClear");
+  qInput.addEventListener("input", () => {
+    state.q = qInput.value;
+    qClear.hidden = !qInput.value;
+    renderAll();
+  });
+  qInput.addEventListener("focus", () => {
+    if (window.matchMedia("(min-width: 900px)").matches) return;
+    $("sheet").classList.add("expanded"); $("sheethead").setAttribute("aria-expanded", "true");
+  });
+  qInput.addEventListener("keydown", ev => { if (ev.key === "Enter") qInput.blur(); if (ev.key === "Escape") { qClear.click(); } });
+  qClear.onclick = () => { qInput.value = ""; state.q = ""; qClear.hidden = true; renderAll(); qInput.focus(); };
 
   // ---------- Event card ----------
   const closeCard = () => { $("cardOverlay").hidden = true; state.selected = null; drawPins(); };
@@ -770,7 +829,7 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
     copy.onclick = async () => { try { await navigator.clipboard.writeText(url); toast("Link copied"); } catch (_) { toast("Select the link above to copy it"); } };
     box.appendChild(copy);
     d.appendChild(box); ov.appendChild(d); ov.hidden = false;
-    try { new QRCode(q, { text: url, width: 240, height: 240, colorDark: "#17151f", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M }); }
+    try { new QRCode(q, { text: url, width: 240, height: 240, colorDark: "#0f0d14", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M }); }
     catch (_) { q.textContent = "QR code couldn't load. Share the link below."; }
   };
   $("miscOverlay").addEventListener("click", ev => { if (ev.target === $("miscOverlay")) $("miscOverlay").hidden = true; });
