@@ -1,0 +1,1137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MotiveMap · Durham</title>
+<meta name="description" content="Every student event in Durham on one map. Post one from a screenshot, see what's on tonight.">
+<meta name="theme-color" content="#ffffff">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+/* Layout: one-screen map app. Real street map fills the screen; events in a bottom sheet (side panel on wide screens). Light look. */
+:root {
+  --paper: #f5f6f9;
+  --card: #ffffff;
+  --soft: #eef0f5;
+  --line: #e0e2ea;
+  --ink: #17151f;
+  --muted: #646071;
+  --hot: #d6336c;       /* accent */
+  --hot-ink: #ffffff;
+  --party: #e0336f;
+  --social: #e08600;
+  --sport: #1c9b5a;
+  --society: #6a55dd;
+  --other: #7b7689;
+  --danger: #c8372d;
+  --f-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --f-body: "Instrument Sans", "Helvetica Neue", Arial, system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --gl: max(16px, env(safe-area-inset-left, 0px));
+  --gr: max(16px, env(safe-area-inset-right, 0px));
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--f-body);
+  font-size: 15px;
+  line-height: 1.45;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+[hidden] { display: none !important; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
+
+#app { position: fixed; inset: 0; overflow: hidden; }
+#map { position: absolute; inset: 0; z-index: 1; background: var(--soft); }
+.leaflet-container { font-family: var(--f-body); }
+.leaflet-control-attribution { font-size: 10px; }
+
+/* Header */
+.top {
+  position: absolute; z-index: 1001; left: 0; right: 0; top: 0;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
+  padding-left: var(--gl); padding-right: var(--gr); padding-bottom: 14px;
+  background: linear-gradient(var(--paper) 62%, rgba(245,246,249,0));
+  display: grid; gap: 10px;
+  pointer-events: none;
+}
+.top > * { pointer-events: auto; }
+.brandrow { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.mark {
+  width: 28px; height: 28px; flex: none;
+  border-radius: 50% 50% 50% 4px; transform: rotate(-45deg);
+  background: var(--hot); display: grid; place-items: center;
+}
+.mark span { width: 9px; height: 9px; border-radius: 50%; background: var(--card); }
+.brand { font-family: var(--f-display); font-weight: 800; font-size: 22px; letter-spacing: -0.02em; line-height: 1; }
+.city { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 3px 8px; }
+.spacer { flex: 1; }
+.pillbtn {
+  border: 1px solid var(--line); background: var(--card); border-radius: 999px;
+  padding: 7px 12px; font-size: 13px; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 6px;
+  box-shadow: 0 1px 2px rgba(23,21,31,.06);
+}
+.pillbtn svg { width: 16px; height: 16px; }
+.chips {
+  display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none;
+  margin-inline: calc(-1 * var(--gl)) calc(-1 * var(--gr));
+  padding-inline: var(--gl) var(--gr); padding-bottom: 2px;
+}
+.chips::-webkit-scrollbar { display: none; }
+.chip {
+  flex: none; border: 1px solid var(--line); background: var(--card); border-radius: 999px;
+  padding: 7px 13px; font-size: 13.5px; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(23,21,31,.05);
+}
+.chip .dot { width: 8px; height: 8px; border-radius: 50%; }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--card); border-color: var(--ink); }
+.chip.time[aria-pressed="true"] { background: var(--hot); border-color: var(--hot); color: var(--hot-ink); }
+.chipsep { flex: none; width: 1px; background: var(--line); margin-block: 6px; }
+
+/* Map controls */
+.mapctl { position: absolute; z-index: 1001; right: var(--gr); top: 130px; display: grid; gap: 6px; }
+.mapctl button {
+  width: 42px; height: 42px; border-radius: 12px; border: 1px solid var(--line); background: var(--card);
+  font-size: 19px; font-weight: 600; display: grid; place-items: center;
+  box-shadow: 0 2px 8px rgba(23,21,31,.08);
+}
+.mapctl svg { width: 19px; height: 19px; }
+.banner {
+  position: absolute; z-index: 1001; left: var(--gl); right: var(--gr); top: 124px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px;
+  font-size: 13.5px; color: var(--muted); box-shadow: 0 4px 16px rgba(23,21,31,.08);
+  margin-right: 54px;
+}
+.banner strong { color: var(--ink); }
+
+/* Pins */
+.pin-wrap { position: relative; }
+.pin {
+  position: absolute; left: 0; top: 0;
+  width: 20px; height: 20px; margin: -10px 0 0 -10px;
+  border-radius: 50%; background: var(--c);
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 1px rgba(23,21,31,.25), 0 3px 8px rgba(23,21,31,.25);
+}
+.pin-label {
+  position: absolute; left: 14px; top: -9px;
+  white-space: nowrap; font-weight: 700; font-size: 12.5px; color: var(--ink);
+  text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff, 0 0 4px #fff;
+  pointer-events: none;
+}
+.selected .pin { width: 28px; height: 28px; margin: -14px 0 0 -14px; box-shadow: 0 0 0 3px var(--c), 0 4px 12px rgba(23,21,31,.3); }
+.hide-labels .pin-label { display: none; }
+.hide-labels .selected .pin-label { display: block; }
+.area-label {
+  font-family: var(--f-display); font-weight: 800; font-size: 12px;
+  letter-spacing: .16em; text-transform: uppercase; color: var(--hot);
+  white-space: nowrap; transform: translate(-50%, -50%);
+  text-shadow: 0 0 3px #fff, 0 0 4px #fff, 0 0 6px #fff;
+  pointer-events: none; position: absolute;
+}
+.me-dot { width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: #2f7bf5; border: 3px solid #fff; box-shadow: 0 0 0 6px rgba(47,123,245,.2); position: absolute; }
+
+/* Sheet */
+#sheet {
+  position: absolute; z-index: 1001; left: 0; right: 0; bottom: 0;
+  height: 38%; min-height: 220px;
+  background: var(--card); border-radius: 22px 22px 0 0;
+  box-shadow: 0 -6px 30px rgba(23,21,31,.14);
+  display: grid; grid-template-rows: auto 1fr;
+  transition: height .28s ease;
+}
+#sheet.expanded { height: 76%; }
+.sheethead {
+  padding-left: var(--gl); padding-right: var(--gr); padding-block: 8px 10px;
+  display: grid; gap: 8px; border: 0; background: none; text-align: left; width: 100%;
+}
+.grab { width: 40px; height: 5px; border-radius: 3px; background: var(--line); justify-self: center; }
+.sheettitle { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.sheettitle h2 { margin: 0; font-family: var(--f-display); font-weight: 800; font-size: 20px; letter-spacing: -0.01em; }
+.sheettitle span { color: var(--muted); font-size: 13px; }
+#list {
+  overflow-y: auto; padding-left: var(--gl); padding-right: var(--gr);
+  padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+  display: grid; align-content: start; gap: 8px;
+}
+.item {
+  display: grid; grid-template-columns: 60px 1fr auto; gap: 12px; align-items: center;
+  text-align: left; border: 1px solid var(--line); background: var(--card);
+  border-radius: 16px; padding: 10px 12px; width: 100%;
+}
+.item:hover { border-color: #c9ccd8; }
+.when { display: grid; gap: 1px; font-family: var(--f-mono); }
+.when b { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+.when strong { font-size: 16px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.what { min-width: 0; display: grid; gap: 2px; }
+.what .t { font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.what .s { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
+.what .s .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.goingpill { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.goingpill.me { color: var(--hot); font-weight: 700; }
+.empty { border: 1px dashed #c9ccd8; border-radius: 16px; padding: 18px; color: var(--muted); display: grid; gap: 6px; }
+.empty strong { color: var(--ink); font-family: var(--f-display); font-size: 17px; }
+
+#fab {
+  position: absolute; z-index: 1002; right: var(--gr);
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  border: 0; background: var(--hot); color: var(--hot-ink); border-radius: 999px;
+  padding: 14px 20px; font-weight: 700; font-size: 15px;
+  display: inline-flex; align-items: center; gap: 8px;
+  box-shadow: 0 8px 24px rgba(214,51,108,.35);
+}
+#fab svg { width: 18px; height: 18px; }
+
+/* Dialogs */
+.overlay { position: absolute; inset: 0; z-index: 2000; background: rgba(23,21,31,.38); display: grid; align-items: end; justify-items: center; }
+.dialog {
+  width: 100%; max-width: 560px; max-height: 92%; overflow-y: auto;
+  background: var(--card); border-radius: 24px 24px 0 0;
+  padding-left: var(--gl); padding-right: var(--gr);
+  padding-top: 18px; padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+  display: grid; gap: 14px;
+}
+.dhead { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.close { flex: none; width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--line); background: var(--soft); font-size: 18px; line-height: 1; }
+.tag { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.tag .dot { width: 9px; height: 9px; border-radius: 50%; }
+.dialog h3 { margin: 6px 0 0; font-family: var(--f-display); font-weight: 800; font-size: 26px; line-height: 1.1; letter-spacing: -0.02em; text-wrap: balance; }
+.facts { display: grid; gap: 8px; margin: 0; }
+.fact { display: grid; grid-template-columns: 74px 1fr; gap: 10px; }
+.fact dt { color: var(--muted); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; padding-top: 2px; }
+.fact dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; font-size: 14px; }
+.desc { margin: 0; }
+.note { font-size: 13px; color: var(--muted); background: var(--soft); border-radius: 12px; padding: 10px 12px; }
+.note.warn { color: #8a4b00; background: #fff3e0; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.btn {
+  border: 1px solid var(--line); background: var(--card); border-radius: 999px;
+  padding: 11px 16px; font-weight: 700; font-size: 14px; text-decoration: none;
+  display: inline-flex; align-items: center; gap: 8px; color: var(--ink);
+}
+.btn.primary { background: var(--hot); color: var(--hot-ink); border-color: var(--hot); }
+.btn.dark { background: var(--ink); color: var(--card); border-color: var(--ink); }
+.btn.on { background: transparent; color: var(--hot); border-color: var(--hot); }
+.btn.danger { color: var(--danger); }
+.btn:disabled { opacity: .5; }
+.linkish { background: none; border: 0; color: var(--hot); font-weight: 700; padding: 4px 0; text-decoration: underline; text-underline-offset: 3px; justify-self: start; }
+
+/* Add flow */
+.drop {
+  border: 2px dashed #c9ccd8; border-radius: 18px; padding: 24px 18px;
+  display: grid; justify-items: center; gap: 8px; text-align: center; background: var(--soft);
+}
+.drop.over { border-color: var(--hot); }
+.drop strong { font-family: var(--f-display); font-size: 19px; }
+.drop p { margin: 0; color: var(--muted); font-size: 13.5px; max-width: 36ch; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.reading { display: grid; grid-template-columns: 84px 1fr; gap: 14px; align-items: center; }
+.reading img { width: 84px; height: 112px; object-fit: cover; border-radius: 12px; border: 1px solid var(--line); }
+.reading .status { display: grid; gap: 6px; }
+.reading .status strong { font-family: var(--f-display); font-size: 18px; }
+.pulse { width: 100%; height: 4px; border-radius: 2px; background: var(--soft); overflow: hidden; }
+.pulse i { display: block; height: 100%; width: 40%; background: var(--hot); border-radius: 2px; animation: slide 1.1s ease-in-out infinite; }
+@keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
+@media (prefers-reduced-motion: reduce) { .pulse i { animation: none; width: 100%; } #sheet { transition: none; } }
+
+form.eventform { display: grid; gap: 12px; }
+.field { display: grid; gap: 5px; min-width: 0; }
+.field > label, .field .lbl { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.field input, .field select, .field textarea {
+  width: 100%; background: var(--card); border: 1px solid #d3d6e0; border-radius: 12px; padding: 10px 12px; min-width: 0;
+}
+.field textarea { resize: vertical; min-height: 64px; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.row3 { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 10px; }
+@media (max-width: 420px) { .row3 { grid-template-columns: 1fr 1fr; } .row3 .field:first-child { grid-column: 1 / -1; } }
+.searchrow { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.results { display: grid; gap: 4px; }
+.results button { text-align: left; border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 8px 10px; font-size: 13.5px; }
+.results button:hover { border-color: var(--hot); }
+#miniMap { height: 210px; border-radius: 14px; border: 1px solid var(--line); overflow: hidden; }
+.hint { font-size: 12.5px; color: var(--muted); }
+.hint.hot { color: var(--hot); }
+.err { font-size: 13px; color: var(--danger); font-weight: 600; }
+.check { display: flex; gap: 10px; align-items: start; font-size: 14px; font-weight: 600; }
+.check input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--hot); }
+.check small { display: block; color: var(--muted); font-size: 12.5px; font-weight: 400; }
+.cats { display: flex; flex-wrap: wrap; gap: 8px; }
+.cats input { position: absolute; opacity: 0; pointer-events: none; }
+.cats label { border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; font-size: 13.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
+.cats input:checked + label { background: var(--ink); color: var(--card); border-color: var(--ink); }
+.cats input:focus-visible + label { outline: 2px solid var(--hot); outline-offset: 2px; }
+.cats .dot { width: 8px; height: 8px; border-radius: 50%; }
+.qrbox { display: grid; justify-items: center; gap: 12px; padding: 8px 0; }
+#qr { background: #fff; padding: 14px; border-radius: 16px; border: 1px solid var(--line); }
+#qr img, #qr canvas { display: block; width: 240px; height: 240px; }
+.urltext { font-family: var(--f-mono); font-size: 13px; overflow-wrap: anywhere; text-align: center; user-select: all; }
+
+#toast {
+  position: absolute; z-index: 3000; left: 50%; transform: translateX(-50%);
+  bottom: calc(86px + env(safe-area-inset-bottom, 0px));
+  background: var(--ink); color: var(--card); padding: 10px 16px; border-radius: 999px;
+  font-weight: 600; font-size: 14px; max-width: calc(100% - 32px); text-align: center;
+}
+
+@media (min-width: 900px) {
+  #sheet { left: auto; top: 0; width: 400px; height: auto !important; min-height: 0; border-radius: 0; border-left: 1px solid var(--line); box-shadow: none; padding-top: env(safe-area-inset-top, 0px); }
+  .grab { display: none; }
+  .top { right: 400px; }
+  .mapctl { right: calc(400px + 16px); }
+  #fab { right: calc(400px + 20px); }
+  .banner { right: calc(400px + 16px); }
+  .overlay { align-items: center; }
+  .dialog { border-radius: 24px; max-height: 88%; }
+  #toast { left: calc(50% - 200px); bottom: 32px; }
+  .leaflet-bottom.leaflet-right { right: 400px; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="map" aria-label="Map of Durham with event pins"></div>
+
+  <header class="top">
+    <div class="brandrow">
+      <div class="mark" aria-hidden="true"><span></span></div>
+      <div class="brand">MotiveMap</div>
+      <div class="city">Durham</div>
+      <div class="spacer"></div>
+      <button class="pillbtn" id="shareBtn" aria-label="Share with a QR code">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/></svg>
+        Share
+      </button>
+    </div>
+    <div class="chips" id="chips" role="toolbar" aria-label="Filters"></div>
+  </header>
+
+  <div class="mapctl">
+    <button id="locateBtn" aria-label="Show where I am" title="Where am I?">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+    </button>
+    <button id="zoomIn" aria-label="Zoom in">+</button>
+    <button id="zoomOut" aria-label="Zoom out">−</button>
+    <button id="homeBtn" aria-label="Back to central Durham" title="Back to central Durham">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M4 11l8-7 8 7v9h-5v-6h-6v6H4z"/></svg>
+    </button>
+  </div>
+  <div class="banner" id="banner" hidden></div>
+
+  <section id="sheet" aria-label="Events">
+    <button class="sheethead" id="sheethead" aria-expanded="false">
+      <span class="grab" aria-hidden="true"></span>
+      <span class="sheettitle"><h2 id="sheetTitle">This week</h2><span id="sheetCount">Loading…</span></span>
+    </button>
+    <div id="list"></div>
+  </section>
+
+  <button id="fab">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+    Add event
+  </button>
+
+  <div class="overlay" id="cardOverlay" hidden></div>
+  <div class="overlay" id="addOverlay" hidden></div>
+  <div class="overlay" id="miscOverlay" hidden></div>
+  <div id="toast" role="status" hidden></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+// ============ SETTINGS: paste your Supabase details here ============
+// Supabase > Project Settings > API: "Project URL" and the "anon public" key.
+// The anon key is meant to be public; the database only allows safe actions.
+const CONFIG = {
+  SUPABASE_URL: "https://ytdhoevokekoxrbxmveu.supabase.co",
+  SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl0ZGhvZXZva2Vrb3hyYnhtdmV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIyMzYyMDIsImV4cCI6MjEwNzgxMjIwMn0.2rU6nYu2yePofrKOrYy7-Q_OuVrVnzuRshId8r-X7y0",
+};
+// ====================================================================
+
+(() => {
+  "use strict";
+
+  // ---------- Durham places (quick picks; drag the pin to fine-tune) ----------
+  const PLACES_CSV = `University College|Castle;Univ;Durham Castle;Castle JCR|college|54.7750|-1.5763
+Hatfield College|Hatfield;Hatters|college|54.7738|-1.5735
+St Chad's College|Chad's;St Chads|college|54.7730|-1.5740
+St John's College|John's;St Johns;Cranmer|college|54.7712|-1.5752
+St Cuthbert's Society|Cuth's;Cuths;St Cuthberts|college|54.7715|-1.5750
+College of St Hild and St Bede|Hild Bede;Hild-Bede;Hild & Bede|college|54.7790|-1.5650
+Rushford Court|Rushford|college|54.7790|-1.5815
+St Mary's College|Mary's;St Marys|college|54.7660|-1.5800
+St Aidan's College|Aidan's;St Aidans|college|54.7637|-1.5823
+Grey College|Grey|college|54.7650|-1.5750
+Van Mildert College|Mildert;Van Mildert|college|54.7610|-1.5810
+Trevelyan College|Trevs;Trevelyan|college|54.7625|-1.5795
+Collingwood College|Collingwood;Woody|college|54.7605|-1.5745
+Josephine Butler College|Butler;Jo Butler|college|54.7550|-1.5745
+Stephenson College|Stephenson;Stevo|college|54.7545|-1.5730
+John Snow College|John Snow;Snow|college|54.7590|-1.5830
+South College|South|college|54.7585|-1.5840
+Ustinov College|Ustinov;Sheraton Park|college|54.7700|-1.5975
+Durham Students' Union|SU;Dunelm House;the Union|university|54.7735|-1.5715
+Palace Green|Palace Green Library|university|54.7742|-1.5765
+Bill Bryson Library|Billy B;Main Library|university|54.7665|-1.5775
+Calman Learning Centre|Calman;CLC|university|54.7672|-1.5735
+Teaching and Learning Centre|TLC|university|54.7640|-1.5725
+Maiden Castle|Maiden Castle Sports Centre;Sports Centre|sport|54.7675|-1.5615
+The Racecourse|Racecourse;Durham Racecourse|sport|54.7765|-1.5640
+Wharton Park|Wharton|outdoor|54.7810|-1.5800
+Durham Cathedral|Cathedral|landmark|54.7735|-1.5762
+The Bailey|Bailey;North Bailey;South Bailey|landmark|54.7728|-1.5752
+Market Place|Market Square;Town Centre|landmark|54.7765|-1.5755
+Prince Bishops Shopping Centre|Prince Bishops|landmark|54.7770|-1.5730
+The Riverwalk|Riverwalk|landmark|54.7775|-1.5765
+Durham Station|Train Station;Railway Station|landmark|54.7794|-1.5817
+Jimmy Allen's|Jimmy's;Jimmy Allens|venue|54.7752|-1.5732
+Klute|Klute Nightclub|venue|54.7750|-1.5728
+Fabio's|Fabios|venue|54.7752|-1.5745
+The Library Bar|Library;Library Bar|venue|54.7758|-1.5748
+Osbournes|Ozzies;Osbournes Bar|venue|54.7787|-1.5795
+The Swan and Three Cygnets|Swan;Swan and Cygnets|venue|54.7755|-1.5725
+The Old Elm Tree|Elm Tree|venue|54.7760|-1.5800
+Head of Steam|Head of Steam Durham|venue|54.7780|-1.5790
+Market Tavern|Market Tav|venue|54.7765|-1.5758
+The Shakespeare Tavern|Shakespeare|venue|54.7752|-1.5747
+Woodman Inn|Woodman|venue|54.7790|-1.5660
+The Viaduct|Viaduct;Lambton Street;Waddington Street|area|54.7790|-1.5835
+Gilesgate|Gilesgate Bank|area|54.7795|-1.5620
+Claypath|Claypath|area|54.7785|-1.5705
+Elvet|Old Elvet;New Elvet;Hallgarth Street|area|54.7720|-1.5690
+Neville's Cross|Nevilles Cross|area|54.7710|-1.5960
+Nevilledale|Nevilledale Terrace|area|54.7760|-1.5900
+Western Hill|Western Hill|area|54.7820|-1.5870`;
+  const PLACES = PLACES_CSV.split("\n").map(l => {
+    const [name, aliases, category, lat, lng] = l.split("|");
+    return { name, aliases: aliases.split(";").filter(Boolean), category, lat: +lat, lng: +lng };
+  });
+  const PLACE_BY_NAME = new Map(PLACES.map(p => [p.name.toLowerCase(), p]));
+
+  const AREA_LABELS = [
+    ["The Bailey", 54.7733, -1.5757],
+    ["Claypath", 54.7787, -1.5703],
+    ["Gilesgate", 54.7798, -1.5612],
+    ["Elvet", 54.7716, -1.5672],
+    ["The Viaduct", 54.7800, -1.5850],
+    ["The Hill", 54.7622, -1.5790],
+  ];
+
+  const CATS = {
+    party:   { label: "Party",   color: "#e0336f" },
+    social:  { label: "Social",  color: "#e08600" },
+    sport:   { label: "Sport",   color: "#1c9b5a" },
+    society: { label: "Society", color: "#6a55dd" },
+    other:   { label: "Other",   color: "#7b7689" },
+  };
+  const TIMES = [
+    { id: "tonight", label: "Tonight" },
+    { id: "week", label: "This week" },
+    { id: "all", label: "All upcoming" },
+  ];
+  const HOME = { center: [54.7712, -1.5745], zoom: 15 };
+  const DURHAM_BOX = { s: 54.735, n: 54.800, w: -1.625, e: -1.525 };
+
+  // ---------- Tiny helpers ----------
+  const $ = id => document.getElementById(id);
+  const h = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const TZ = "Europe/London";
+  const fmt = (d, o) => new Intl.DateTimeFormat("en-GB", { timeZone: TZ, ...o }).format(d);
+  const hm = d => fmt(d, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  const dayKey = d => fmt(d, { year: "numeric", month: "2-digit", day: "2-digit" });
+  const catOf = e => CATS[e.category] ? e.category : "other";
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (_) { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} },
+  };
+  const randomId = n => { const a = new Uint8Array(n); crypto.getRandomValues(a); return [...a].map(b => b.toString(16).padStart(2, "0")).join(""); };
+  let DEVICE = store.get("mm_device", null);
+  if (!DEVICE) { DEVICE = randomId(12); store.set("mm_device", DEVICE); }
+
+  let toastTimer;
+  function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, 2800); }
+
+  function londonDate(dateStr, timeStr) {
+    if (!dateStr || !timeStr) return null;
+    const [y, mo, d] = dateStr.split("-").map(Number), [hh, mm] = timeStr.split(":").map(Number);
+    if ([y, mo, d, hh, mm].some(Number.isNaN)) return null;
+    let guess = Date.UTC(y, mo - 1, d, hh, mm);
+    for (let i = 0; i < 2; i++) {
+      const g = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(guess)).map(p => [p.type, p.value]));
+      guess += Date.UTC(y, mo - 1, d, hh, mm) - Date.UTC(+g.year, +g.month - 1, +g.day, +g.hour, +g.minute);
+    }
+    return new Date(guess);
+  }
+  const londonParts = date => {
+    const g = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(date).map(p => [p.type, p.value]));
+    return { date: `${g.year}-${g.month}-${g.day}`, time: `${g.hour}:${g.minute}` };
+  };
+
+  // ---------- Data layer: Supabase, or this-phone-only demo mode ----------
+  const LIVE = !!(CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY);
+  const api = {
+    async req(path, opts = {}) {
+      const res = await fetch(CONFIG.SUPABASE_URL.replace(/\/$/, "") + "/rest/v1/" + path, {
+        ...opts,
+        headers: { apikey: CONFIG.SUPABASE_ANON_KEY, Authorization: "Bearer " + CONFIG.SUPABASE_ANON_KEY, "Content-Type": "application/json", ...(opts.headers || {}) },
+      });
+      if (!res.ok) { let msg = res.statusText; try { msg = (await res.json()).message || msg; } catch (_) {} throw new Error(msg); }
+      const txt = await res.text();
+      return txt ? JSON.parse(txt) : null;
+    },
+    async load() {
+      if (!LIVE) return { events: store.get("mm_demo_events", []), going: store.get("mm_demo_going", []) };
+      const since = new Date(Date.now() - 864e5).toISOString();
+      const [events, going] = await Promise.all([
+        api.req(`events?select=*&start_at=gte.${encodeURIComponent(since)}&order=start_at.asc&limit=500`),
+        api.req("going?select=event_id,device_id&limit=5000"),
+      ]);
+      return { events, going };
+    },
+    async create(ev) {
+      const token = randomId(16);
+      let id;
+      if (LIVE) id = await api.req("rpc/create_event", { method: "POST", body: JSON.stringify({ p_event: ev, p_token: token }) });
+      else { id = randomId(8); const all = store.get("mm_demo_events", []); all.push({ id, created_at: new Date().toISOString(), ...ev }); store.set("mm_demo_events", all); }
+      const tokens = store.get("mm_tokens", {}); tokens[id] = token; store.set("mm_tokens", tokens);
+      return id;
+    },
+    async remove(id) {
+      const token = store.get("mm_tokens", {})[id];
+      if (!token) return false;
+      if (LIVE) return await api.req("rpc/delete_event", { method: "POST", body: JSON.stringify({ p_event_id: id, p_token: token }) });
+      store.set("mm_demo_events", store.get("mm_demo_events", []).filter(e => e.id !== id));
+      return true;
+    },
+    async setGoing(id, going) {
+      if (LIVE) return api.req("rpc/set_going", { method: "POST", body: JSON.stringify({ p_event_id: id, p_device: DEVICE, p_going: going }) });
+      let g = store.get("mm_demo_going", []).filter(r => !(r.event_id === id && r.device_id === DEVICE));
+      if (going) g.push({ event_id: id, device_id: DEVICE });
+      store.set("mm_demo_going", g);
+    },
+  };
+
+  // ---------- State ----------
+  const state = { events: [], going: new Map(), loaded: false, time: "week", cats: new Set(), selected: null };
+  function goingCount(id) { return (state.going.get(id) || new Set()).size; }
+  const iAmGoing = id => (state.going.get(id) || new Set()).has(DEVICE);
+  const isMine = id => !!store.get("mm_tokens", {})[id];
+
+  async function refresh() {
+    try {
+      const { events, going } = await api.load();
+      state.events = (events || []).filter(e => e.start_at && Number.isFinite(+e.lat) && Number.isFinite(+e.lng));
+      const m = new Map();
+      for (const r of going || []) { if (!m.has(r.event_id)) m.set(r.event_id, new Set()); m.get(r.event_id).add(r.device_id); }
+      state.going = m;
+      state.loaded = true;
+      if (LIVE) $("banner").hidden = true;
+      renderAll();
+    } catch (err) {
+      state.loaded = true;
+      const b = $("banner"); b.textContent = "Can't reach the events right now. Check your signal; the map will retry."; b.hidden = false;
+      renderAll();
+    }
+  }
+
+  // ---------- Filtering ----------
+  function inTime(e, now = new Date()) {
+    const start = new Date(e.start_at);
+    if (Number.isNaN(+start)) return false;
+    const end = e.end_at ? new Date(e.end_at) : new Date(+start + 4 * 3600e3);
+    if (end < now) return false;
+    if (state.time === "all") return true;
+    if (state.time === "week") return start - now < 7 * 864e5;
+    return start < londonDate(londonParts(new Date(+now + 864e5)).date, "06:00");
+  }
+  const visibleEvents = () => state.events.filter(e => inTime(e)).filter(e => !state.cats.size || state.cats.has(catOf(e))).sort((a, b) => new Date(a.start_at) - new Date(b.start_at));
+
+  // ---------- Map ----------
+  const map = L.map("map", { zoomControl: false, attributionControl: true, tap: true }).setView(HOME.center, HOME.zoom);
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+    subdomains: "abcd", maxZoom: 20,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>',
+  }).addTo(map);
+  const areaLayer = L.layerGroup().addTo(map);
+  for (const [t, lat, lng] of AREA_LABELS) {
+    L.marker([lat, lng], { interactive: false, keyboard: false, icon: L.divIcon({ className: "", html: `<div class="area-label">${esc(t)}</div>`, iconSize: [0, 0] }) }).addTo(areaLayer);
+  }
+  const eventLayer = L.layerGroup().addTo(map);
+  let meMarker = null;
+  function zoomClasses() {
+    const z = map.getZoom();
+    map.getContainer().classList.toggle("hide-labels", z < 15);
+    if (z < 14 && map.hasLayer(areaLayer)) map.removeLayer(areaLayer);
+    if (z >= 14 && !map.hasLayer(areaLayer)) map.addLayer(areaLayer);
+  }
+  map.on("zoomend", zoomClasses);
+  zoomClasses();
+  map.on("click", () => { if (state.selected) { state.selected = null; drawPins(); } });
+
+  function drawPins() {
+    eventLayer.clearLayers();
+    const groups = new Map();
+    for (const e of visibleEvents()) {
+      const k = (+e.lat).toFixed(4) + "," + (+e.lng).toFixed(4);
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(e);
+    }
+    for (const list of groups.values()) {
+      list.forEach((e, i) => {
+        const c = CATS[catOf(e)].color;
+        if (e.is_private) {
+          L.circle([+e.lat, +e.lng], { radius: 150, color: c, weight: 2, dashArray: "6 6", fillColor: c, fillOpacity: .12, interactive: false }).addTo(eventLayer);
+        }
+        let ox = 0, oy = 0;
+        if (list.length > 1) { const a = (i / list.length) * Math.PI * 2 - Math.PI / 2; ox = Math.cos(a) * 16; oy = Math.sin(a) * 16; }
+        const title = (e.title || "Event").length > 26 ? e.title.slice(0, 25) + "…" : (e.title || "Event");
+        const icon = L.divIcon({
+          className: "",
+          iconSize: [0, 0],
+          html: `<div class="pin-wrap${e.id === state.selected ? " selected" : ""}" style="--c:${c};transform:translate(${ox}px,${oy}px)"><span class="pin"></span><span class="pin-label">${esc(title)}</span></div>`,
+        });
+        const m = L.marker([+e.lat, +e.lng], { icon, keyboard: true, title: e.title, riseOnHover: true, zIndexOffset: e.id === state.selected ? 1000 : 0 }).addTo(eventLayer);
+        m.on("click", ev => { L.DomEvent.stopPropagation(ev); openCard(e.id); });
+      });
+    }
+  }
+  function focusEvent(e) {
+    const wide = window.matchMedia("(min-width: 900px)").matches;
+    const z = Math.max(map.getZoom(), 16);
+    const pt = map.project([+e.lat, +e.lng], z);
+    const offsetY = wide ? 0 : $("sheet").getBoundingClientRect().height / 2 - 40;
+    map.setView(map.unproject(pt.add([0, offsetY]), z), z, { animate: true });
+  }
+
+  $("zoomIn").onclick = () => map.zoomIn();
+  $("zoomOut").onclick = () => map.zoomOut();
+  $("homeBtn").onclick = () => map.setView(HOME.center, HOME.zoom);
+  $("locateBtn").onclick = () => {
+    if (!navigator.geolocation) { toast("Your browser can't share location."); return; }
+    navigator.geolocation.getCurrentPosition(pos => {
+      const ll = [pos.coords.latitude, pos.coords.longitude];
+      if (meMarker) meMarker.setLatLng(ll);
+      else meMarker = L.marker(ll, { interactive: false, icon: L.divIcon({ className: "", iconSize: [0, 0], html: '<span class="me-dot"></span>' }) }).addTo(map);
+      map.setView(ll, Math.max(map.getZoom(), 16));
+    }, () => toast("Couldn't get your location. Check location permission."), { enableHighAccuracy: true, timeout: 10000 });
+  };
+
+  function placeChrome() {
+    const headH = document.querySelector(".top").getBoundingClientRect().height;
+    document.querySelector(".mapctl").style.top = `${headH + 4}px`;
+    $("banner").style.top = `${headH + 2}px`;
+  }
+
+  // ---------- Chips ----------
+  function renderChips() {
+    const wrap = $("chips"); wrap.textContent = "";
+    for (const t of TIMES) {
+      const b = h("button", "chip time", t.label);
+      b.setAttribute("aria-pressed", String(state.time === t.id));
+      b.onclick = () => { state.time = t.id; renderChips(); renderAll(); };
+      wrap.appendChild(b);
+    }
+    wrap.appendChild(h("span", "chipsep"));
+    for (const [id, c] of Object.entries(CATS)) {
+      if (id === "other") continue;
+      const b = h("button", "chip"); const d = h("span", "dot"); d.style.background = c.color;
+      b.append(d, c.label);
+      b.setAttribute("aria-pressed", String(state.cats.has(id)));
+      b.onclick = () => { state.cats.has(id) ? state.cats.delete(id) : state.cats.add(id); renderChips(); renderAll(); };
+      wrap.appendChild(b);
+    }
+  }
+
+  // ---------- List ----------
+  $("sheethead").onclick = () => {
+    if (window.matchMedia("(min-width: 900px)").matches) return;
+    const s = $("sheet"); const exp = !s.classList.contains("expanded");
+    s.classList.toggle("expanded", exp); $("sheethead").setAttribute("aria-expanded", String(exp));
+  };
+  function renderList() {
+    const list = $("list"); list.textContent = "";
+    const evs = visibleEvents();
+    $("sheetTitle").textContent = TIMES.find(t => t.id === state.time).label;
+    $("sheetCount").textContent = state.loaded ? `${evs.length} event${evs.length === 1 ? "" : "s"}` : "Loading…";
+    if (!state.loaded) return;
+    if (!evs.length) {
+      const box = h("div", "empty");
+      if (!state.events.length) box.append(h("strong", null, "No motives yet"), h("span", null, "Tap Add event to put the first one on the map. A screenshot of the poster is enough."));
+      else box.append(h("strong", null, "Nothing matches"), h("span", null, "Try All upcoming, or clear the category filters."));
+      list.appendChild(box); return;
+    }
+    for (const e of evs) {
+      const b = h("button", "item");
+      const start = new Date(e.start_at);
+      const when = h("span", "when");
+      when.append(h("b", null, dayKey(start) === dayKey(new Date()) ? "Today" : fmt(start, { weekday: "short", day: "numeric" })), h("strong", null, hm(start)));
+      const what = h("span", "what"); const s = h("span", "s"); const dot = h("span", "dot"); dot.style.background = CATS[catOf(e)].color;
+      s.append(dot, [e.is_private ? "Near " + (e.venue_name || "Durham") : e.venue_name, e.host].filter(Boolean).join(" · "));
+      what.append(h("span", "t", e.title || "Untitled event"), s);
+      const n = goingCount(e.id);
+      b.append(when, what, h("span", "goingpill" + (iAmGoing(e.id) ? " me" : ""), n ? `${n} going` : ""));
+      b.onclick = () => { focusEvent(e); openCard(e.id); };
+      list.appendChild(b);
+    }
+  }
+  function renderAll() { renderList(); drawPins(); refreshCard(); }
+
+  // ---------- Event card ----------
+  const closeCard = () => { $("cardOverlay").hidden = true; state.selected = null; drawPins(); };
+  $("cardOverlay").addEventListener("click", ev => { if (ev.target === $("cardOverlay")) closeCard(); });
+  function openCard(id) { state.selected = id; drawPins(); refreshCard(true); }
+  function refreshCard(open) {
+    const ov = $("cardOverlay");
+    if (!open && ov.hidden) return;
+    const e = state.events.find(x => x.id === state.selected);
+    if (!e) { ov.hidden = true; return; }
+    ov.textContent = "";
+    const d = h("div", "dialog"); d.setAttribute("role", "dialog"); d.setAttribute("aria-modal", "true"); d.setAttribute("aria-labelledby", "cardTitle");
+    const head = h("div", "dhead"); const left = h("div");
+    const tag = h("span", "tag"); const dot = h("span", "dot"); dot.style.background = CATS[catOf(e)].color;
+    tag.append(dot, CATS[catOf(e)].label + (e.is_private ? " · Private" : ""));
+    const h3 = h("h3", null, e.title || "Untitled event"); h3.id = "cardTitle";
+    left.append(tag, h3);
+    const close = h("button", "close", "×"); close.setAttribute("aria-label", "Close"); close.onclick = closeCard;
+    head.append(left, close); d.appendChild(head);
+
+    const facts = h("dl", "facts");
+    const fact = (k, v, mono) => { if (!v) return; const f = h("div", "fact"); f.append(h("dt", null, k), h("dd", mono ? "mono" : null, v)); facts.appendChild(f); };
+    const start = new Date(e.start_at), end = e.end_at ? new Date(e.end_at) : null;
+    fact("When", fmt(start, { weekday: "short", day: "numeric", month: "short" }) + " · " + hm(start) + (end ? "–" + hm(end) : ""), true);
+    fact("Where", e.is_private ? `Near ${e.venue_name || "Durham"}` : [e.venue_name, e.address].filter(Boolean).join(", "));
+    fact("Host", e.host);
+    fact("Entry", e.price);
+    d.appendChild(facts);
+    if (e.description) d.appendChild(h("p", "desc", e.description));
+    if (e.is_private) d.appendChild(h("div", "note", "House party: the map shows a rough 150 m area, never the address. The host shares the exact door with people going."));
+
+    const actions = h("div", "actions");
+    const n = goingCount(e.id), mine = iAmGoing(e.id);
+    const go = h("button", "btn " + (mine ? "on" : "primary"), mine ? `You're going · ${n}` : `I'm going${n ? " · " + n : ""}`);
+    go.onclick = async () => {
+      go.disabled = true;
+      try {
+        await api.setGoing(e.id, !mine);
+        if (!state.going.has(e.id)) state.going.set(e.id, new Set());
+        mine ? state.going.get(e.id).delete(DEVICE) : state.going.get(e.id).add(DEVICE);
+        toast(mine ? "Removed" : "You're going");
+        renderAll();
+      } catch (_) { go.disabled = false; toast("Couldn't save that. Try again."); }
+    };
+    actions.appendChild(go);
+    if (!e.is_private) {
+      const a = h("a", "btn dark", "Directions");
+      a.href = `https://www.google.com/maps/dir/?api=1&destination=${(+e.lat).toFixed(6)},${(+e.lng).toFixed(6)}&travelmode=walking`;
+      a.target = "_blank"; a.rel = "noopener";
+      actions.appendChild(a);
+    }
+    if (isMine(e.id)) {
+      const del = h("button", "btn danger", "Delete");
+      del.onclick = async () => {
+        if (del.dataset.c !== "1") { del.dataset.c = "1"; del.textContent = "Tap again to delete"; return; }
+        del.disabled = true;
+        try { await api.remove(e.id); state.events = state.events.filter(x => x.id !== e.id); closeCard(); renderAll(); toast("Event deleted"); }
+        catch (_) { del.disabled = false; toast("Couldn't delete that. Try again."); }
+      };
+      actions.appendChild(del);
+    }
+    d.appendChild(actions);
+    ov.appendChild(d); ov.hidden = false;
+    if (open) close.focus();
+  }
+
+  // ---------- Share (QR) ----------
+  $("shareBtn").onclick = () => {
+    const url = location.href.split("#")[0];
+    const ov = $("miscOverlay"); ov.textContent = "";
+    const d = h("div", "dialog"); d.setAttribute("role", "dialog"); d.setAttribute("aria-modal", "true"); d.setAttribute("aria-label", "Share MotiveMap");
+    const head = h("div", "dhead"); const left = h("div");
+    left.append(h("span", "tag", "Scan to open"), h("h3", null, "MotiveMap on your phone"));
+    const close = h("button", "close", "×"); close.setAttribute("aria-label", "Close"); close.onclick = () => ov.hidden = true;
+    head.append(left, close); d.appendChild(head);
+    const box = h("div", "qrbox"); const q = h("div"); q.id = "qr"; box.appendChild(q);
+    box.appendChild(h("div", "urltext", url));
+    const copy = h("button", "btn", "Copy link");
+    copy.onclick = async () => { try { await navigator.clipboard.writeText(url); toast("Link copied"); } catch (_) { toast("Select the link above to copy it"); } };
+    box.appendChild(copy);
+    d.appendChild(box); ov.appendChild(d); ov.hidden = false;
+    try { new QRCode(q, { text: url, width: 240, height: 240, colorDark: "#17151f", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M }); }
+    catch (_) { q.textContent = "QR code couldn't load. Share the link below."; }
+  };
+  $("miscOverlay").addEventListener("click", ev => { if (ev.target === $("miscOverlay")) $("miscOverlay").hidden = true; });
+
+  // ---------- Screenshot reading (Gemini) ----------
+  const geminiKey = () => store.get("mm_gemini_key", "");
+  const MODELS = ["gemini-flash-latest", "gemini-3-flash-preview", "gemini-3.1-flash-lite", "gemini-2.5-flash"];
+  async function shrink(file) {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+      const scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.naturalWidth * scale); c.height = Math.round(img.naturalHeight * scale);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      return c.toDataURL("image/jpeg", 0.85).split(",")[1];
+    } finally { URL.revokeObjectURL(url); }
+  }
+  function extractionPrompt() {
+    const today = fmt(new Date(), { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    const places = PLACES.map(p => `- ${p.name}${p.aliases.length ? " (" + p.aliases.join(", ") + ")" : ""}`).join("\n");
+    return `You are reading a screenshot of an Instagram post, story or poster advertising a student event in Durham, UK.
+Today is ${today} (UK time). Resolve relative dates such as "tonight", "this Friday" or "Fri 23rd" to the next matching date on or after today.
+
+Durham places. If the venue clearly refers to one of these, give its exact name as venue_match (nicknames in brackets):
+${places}
+
+Reply with only a JSON object with these keys:
+{"is_event": boolean, "title": string, "category": "party" | "social" | "sport" | "society" | "other", "date": "YYYY-MM-DD" or null, "start_time": "HH:MM" 24h or null, "end_time": "HH:MM" 24h or null, "venue_text": the location exactly as written or null, "venue_match": exact place name from the list or null, "address": a street address if one is shown, or null, "host": the organising account, society or college, or null, "price": e.g. "Free", "£5", or null, "description": one short sentence in your own words or null, "is_private": true if it is a house party or at a private home, "confidence": number 0 to 1}
+
+Use the event's own name as title (short, no emojis). Never guess a date or time you cannot see: use null.`;
+  }
+  async function readWithGemini(file, signal) {
+    const data = await shrink(file);
+    const body = JSON.stringify({
+      contents: [{ parts: [{ text: extractionPrompt() }, { inline_data: { mime_type: "image/jpeg", data } }] }],
+      generationConfig: { responseMimeType: "application/json", temperature: 0.1 },
+    });
+    let lastErr = "No model answered";
+    const tried = store.get("mm_gemini_model", null);
+    const order = tried ? [tried, ...MODELS.filter(m => m !== tried)] : MODELS;
+    for (const model of order) {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(geminiKey())}`, { method: "POST", headers: { "Content-Type": "application/json" }, body, signal });
+      if (res.status === 404 || res.status === 400 && model !== order[order.length - 1]) {
+        try { lastErr = (await res.json()).error.message; } catch (_) {}
+        if (res.status === 400 && /API key/i.test(lastErr)) throw new Error("key");
+        continue;
+      }
+      if (res.status === 401 || res.status === 403) throw new Error("key");
+      if (res.status === 429) throw new Error("rate");
+      if (!res.ok) { try { lastErr = (await res.json()).error.message; } catch (_) {} throw new Error(lastErr); }
+      const json = await res.json();
+      store.set("mm_gemini_model", model);
+      const text = json?.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+      const m = text.match(/\{[\s\S]*\}/);
+      if (!m) throw new Error("parse");
+      return JSON.parse(m[0]);
+    }
+    throw new Error(lastErr);
+  }
+
+  function openKeySetup(after) {
+    const ov = $("miscOverlay"); ov.textContent = "";
+    const d = h("div", "dialog"); d.setAttribute("role", "dialog"); d.setAttribute("aria-modal", "true"); d.setAttribute("aria-label", "Screenshot reading setup");
+    const head = h("div", "dhead"); const left = h("div");
+    left.append(h("span", "tag", "Team setup"), h("h3", null, "Turn on screenshot reading"));
+    const close = h("button", "close", "×"); close.setAttribute("aria-label", "Close"); close.onclick = () => ov.hidden = true;
+    head.append(left, close); d.appendChild(head);
+    const p = h("p", "desc"); p.innerHTML = 'Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> and paste it below. It stays on this phone only and is never uploaded to the site.';
+    d.appendChild(p);
+    const f = h("div", "field"); const l = h("label", null, "Gemini API key"); l.htmlFor = "keyInput";
+    const inp = h("input"); inp.id = "keyInput"; inp.type = "password"; inp.autocomplete = "off"; inp.value = geminiKey(); inp.placeholder = "AIza…";
+    f.append(l, inp); d.appendChild(f);
+    const acts = h("div", "actions");
+    const save = h("button", "btn primary", "Save key");
+    save.onclick = () => { store.set("mm_gemini_key", inp.value.trim()); ov.hidden = true; toast(inp.value.trim() ? "Screenshot reading is on" : "Key removed"); if (after) after(); };
+    acts.appendChild(save);
+    if (geminiKey()) { const rm = h("button", "btn danger", "Remove key"); rm.onclick = () => { inp.value = ""; save.click(); }; acts.appendChild(rm); }
+    d.appendChild(acts); ov.appendChild(d); ov.hidden = false; inp.focus();
+  }
+
+  // ---------- Add event ----------
+  let extractCtl = null, miniMap = null;
+  $("fab").onclick = openAdd;
+  $("addOverlay").addEventListener("click", ev => { if (ev.target === $("addOverlay")) closeAdd(); });
+  function closeAdd() { if (extractCtl) extractCtl.abort(); if (miniMap) { miniMap.remove(); miniMap = null; } $("addOverlay").hidden = true; $("addOverlay").textContent = ""; }
+  function openAdd() {
+    const ov = $("addOverlay"); ov.textContent = "";
+    const d = h("div", "dialog"); d.setAttribute("role", "dialog"); d.setAttribute("aria-modal", "true"); d.setAttribute("aria-label", "Add event");
+    const head = h("div", "dhead"); const left = h("div");
+    left.append(h("span", "tag", "New motive"), h("h3", null, "Add an event"));
+    const close = h("button", "close", "×"); close.setAttribute("aria-label", "Close"); close.onclick = closeAdd;
+    head.append(left, close); d.appendChild(head);
+    const body = h("div"); body.id = "addBody"; body.style.cssText = "display:grid;gap:14px";
+    d.appendChild(body); ov.appendChild(d); ov.hidden = false;
+    renderPick(body); close.focus();
+  }
+  function renderPick(body) {
+    if (miniMap) { miniMap.remove(); miniMap = null; }
+    body.textContent = "";
+    const drop = h("div", "drop");
+    drop.append(h("strong", null, "Drop in a screenshot"), h("p", null, "A poster, an Instagram post or a story. The name, date, time and place fill themselves in. You can also paste a screenshot."));
+    const input = h("input", "vh"); input.type = "file"; input.id = "shotInput"; input.accept = "image/*";
+    const lab = h("label", "btn primary", "Choose screenshot"); lab.htmlFor = "shotInput";
+    input.onchange = () => { if (input.files && input.files[0]) startRead(body, input.files[0]); };
+    drop.append(input, lab);
+    drop.addEventListener("dragover", ev => { ev.preventDefault(); drop.classList.add("over"); });
+    drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+    drop.addEventListener("drop", ev => { ev.preventDefault(); drop.classList.remove("over"); const f = [...(ev.dataTransfer?.files || [])].find(f => f.type.startsWith("image/")); if (f) startRead(body, f); });
+    body.appendChild(drop);
+    const manual = h("button", "linkish", "Or fill it in by hand"); manual.onclick = () => renderForm(body, {});
+    body.appendChild(manual);
+    if (!geminiKey()) {
+      const n = h("div", "note"); n.append("Screenshot reading needs a free key on this phone. ");
+      const s = h("button", "linkish", "Set it up"); s.onclick = () => openKeySetup();
+      n.appendChild(s); body.appendChild(n);
+    }
+  }
+  document.addEventListener("paste", ev => {
+    const body = $("addBody");
+    if ($("addOverlay").hidden || !body || !body.querySelector(".drop")) return;
+    const item = [...(ev.clipboardData?.items || [])].find(i => i.type.startsWith("image/"));
+    const f = item && item.getAsFile();
+    if (f) { ev.preventDefault(); startRead(body, f); }
+  });
+  async function startRead(body, file) {
+    if (!geminiKey()) { openKeySetup(() => startRead(body, file)); return; }
+    body.textContent = "";
+    const wrap = h("div", "reading"); const img = h("img"); img.alt = "Your screenshot";
+    const url = URL.createObjectURL(file); img.src = url;
+    const st = h("div", "status"); const bar = h("div", "pulse"); bar.appendChild(h("i"));
+    const sub = h("span", "hint", "Pulling out the name, date, time and place.");
+    const stop = h("button", "linkish", "Stop");
+    st.append(h("strong", null, "Reading the poster…"), sub, bar, stop);
+    wrap.append(img, st); body.appendChild(wrap);
+    extractCtl = new AbortController();
+    stop.onclick = () => extractCtl && extractCtl.abort();
+    try {
+      const out = await readWithGemini(file, extractCtl.signal);
+      extractCtl = null; URL.revokeObjectURL(url);
+      if (!out || out.is_event === false) { renderForm(body, {}, "That doesn't look like an event poster. Fill it in by hand, or try another screenshot."); return; }
+      renderForm(body, out, null, true);
+    } catch (err) {
+      const aborted = extractCtl && extractCtl.signal.aborted;
+      extractCtl = null; URL.revokeObjectURL(url);
+      if (aborted || err.name === "AbortError") { renderPick(body); return; }
+      let msg = "Couldn't read that screenshot. Fill it in by hand, or try a clearer one.";
+      if (err.message === "key") msg = "The Gemini key didn't work. Check it in setup, or fill this in by hand.";
+      else if (err.message === "rate") msg = "Too many reads in a row. Wait a minute, or fill it in by hand.";
+      renderForm(body, {}, msg);
+    }
+  }
+
+  function matchPlace(name, text) {
+    const pick = s => {
+      if (!s) return null;
+      const k = String(s).toLowerCase().trim();
+      return PLACE_BY_NAME.get(k) || PLACES.find(p => p.aliases.some(a => a.toLowerCase() === k)) ||
+        PLACES.find(p => k.includes(p.name.toLowerCase()) || p.aliases.some(a => a.length > 3 && k.includes(a.toLowerCase()))) || null;
+    };
+    return pick(name) || pick(text);
+  }
+  async function geocode(q) {
+    const u = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&countrycodes=gb&bounded=1&viewbox=${DURHAM_BOX.w},${DURHAM_BOX.n},${DURHAM_BOX.e},${DURHAM_BOX.s}&q=${encodeURIComponent(q)}`;
+    const res = await fetch(u, { headers: { "Accept-Language": "en-GB" } });
+    if (!res.ok) throw new Error("geo");
+    return res.json();
+  }
+
+  function renderForm(body, data, warning, fromShot) {
+    if (miniMap) { miniMap.remove(); miniMap = null; }
+    body.textContent = "";
+    if (warning) body.appendChild(h("div", "note warn", warning));
+    if (fromShot) body.appendChild(h("div", "note", (typeof data.confidence === "number" && data.confidence < 0.6) ? "Read from your screenshot, but some details were unclear. Check them before posting." : "Read from your screenshot. Check the details and the pin, then post."));
+    const form = h("form", "eventform"); form.noValidate = true;
+    const field = (id, label, el) => { const f = h("div", "field"); const l = h("label", null, label); l.htmlFor = id; el.id = id; f.append(l, el); return f; };
+    const input = (type, value, ph) => { const i = h("input"); i.type = type; if (value != null) i.value = value; if (ph) i.placeholder = ph; return i; };
+
+    const title = input("text", data.title || "", "e.g. Hatfield Halloween bop"); title.maxLength = 80;
+    form.appendChild(field("fTitle", "Event name", title));
+
+    const cf = h("div", "field"); cf.appendChild(h("span", "lbl", "Type"));
+    const cats = h("div", "cats"); cats.setAttribute("role", "radiogroup"); cats.setAttribute("aria-label", "Type");
+    const startCat = CATS[data.category] ? data.category : "social";
+    for (const [id, c] of Object.entries(CATS)) {
+      const r = h("input"); r.type = "radio"; r.name = "fCat"; r.id = "fCat-" + id; r.value = id; r.checked = id === startCat;
+      const l = h("label"); l.htmlFor = r.id; const dot = h("span", "dot"); dot.style.background = c.color; l.append(dot, c.label);
+      cats.append(r, l);
+    }
+    cf.appendChild(cats); form.appendChild(cf);
+
+    const now = londonParts(new Date());
+    const date = input("date", data.date || now.date), st = input("time", data.start_time || ""), en = input("time", data.end_time || "");
+    const r3 = h("div", "row3"); r3.append(field("fDate", "Date", date), field("fStart", "Starts", st), field("fEnd", "Ends", en));
+    form.appendChild(r3);
+
+    // --- Location: quick pick, address search, draggable pin ---
+    const sel = h("select");
+    const none = h("option", null, "Pick a Durham spot"); none.value = ""; sel.appendChild(none);
+    const groups = { college: "Colleges", venue: "Bars and clubs", area: "Areas (house parties)", university: "University", sport: "Sport", landmark: "Around town", outdoor: "Outdoors" };
+    for (const [cat, label] of Object.entries(groups)) {
+      const og = h("optgroup"); og.label = label;
+      for (const p of PLACES.filter(p => p.category === cat)) { const o = h("option", null, p.name); o.value = p.name; og.appendChild(o); }
+      sel.appendChild(og);
+    }
+    const vf = field("fVenue", "Where", sel);
+    form.appendChild(vf);
+
+    const sf = h("div", "field"); const sl = h("label", null, "Or search an address"); sl.htmlFor = "fAddr";
+    const srow = h("div", "searchrow");
+    const addr = input("text", data.address || "", "e.g. 12 Hawthorn Terrace"); addr.id = "fAddr"; addr.maxLength = 200;
+    const sbtn = h("button", "btn", "Search"); sbtn.type = "button";
+    srow.append(addr, sbtn);
+    const results = h("div", "results");
+    sf.append(sl, srow, results);
+    form.appendChild(sf);
+
+    const mm = h("div"); mm.id = "miniMap";
+    const mmHint = h("span", "hint", "Drag the pin, or tap the map, to put it on the exact spot.");
+    const mf = h("div", "field"); mf.append(mm, mmHint); form.appendChild(mf);
+
+    let pinLL = null, venueName = "";
+    const matched = matchPlace(data.venue_match, data.venue_text);
+    if (matched) { sel.value = matched.name; venueName = matched.name; pinLL = [matched.lat, matched.lng]; }
+    if (data.venue_text) {
+      const hint = h("span", "hint hot", matched && matched.name.toLowerCase() === String(data.venue_text).toLowerCase() ? "" : `Poster says "${data.venue_text}".`);
+      if (hint.textContent) vf.appendChild(hint);
+    }
+
+    const priv = h("input"); priv.type = "checkbox"; priv.id = "fPrivate";
+    priv.checked = !!data.is_private || !!(matched && matched.category === "area");
+    const pl = h("label", "check"); pl.htmlFor = "fPrivate";
+    const pt = h("span"); pt.append("Private address", h("small", null, "Show a rough 150 m area on the map instead of the exact spot."));
+    pl.append(priv, pt); form.appendChild(pl);
+
+    const r2 = h("div", "row");
+    const host = input("text", data.host || "", "College, society or @account"); host.maxLength = 60;
+    const price = input("text", data.price || "", "Free, £5…"); price.maxLength = 30;
+    r2.append(field("fHost", "Host", host), field("fPrice", "Entry", price));
+    form.appendChild(r2);
+    const desc = h("textarea"); desc.value = data.description || ""; desc.maxLength = 280; desc.placeholder = "Dress code, what to bring, anything people should know";
+    form.appendChild(field("fDesc", "Details", desc));
+
+    const err = h("div", "err"); err.hidden = true; form.appendChild(err);
+    const acts = h("div", "actions");
+    const post = h("button", "btn primary", "Post to the map"); post.type = "submit";
+    const back = h("button", "btn", fromShot || warning ? "Try another screenshot" : "Back"); back.type = "button"; back.onclick = () => renderPick(body);
+    acts.append(post, back); form.appendChild(acts);
+    body.appendChild(form);
+
+    // mini map
+    miniMap = L.map(mm, { zoomControl: true, attributionControl: false }).setView(pinLL || HOME.center, pinLL ? 17 : 15);
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", { subdomains: "abcd", maxZoom: 20 }).addTo(miniMap);
+    const pinIcon = L.divIcon({ className: "", iconSize: [0, 0], html: `<div class="pin-wrap selected" style="--c:var(--hot)"><span class="pin"></span></div>` });
+    let marker = null;
+    const setPin = (ll, zoom) => {
+      pinLL = [ll[0], ll[1]];
+      if (!marker) {
+        marker = L.marker(pinLL, { draggable: true, icon: pinIcon, autoPan: true }).addTo(miniMap);
+        marker.on("dragend", () => { const p = marker.getLatLng(); pinLL = [p.lat, p.lng]; mmHint.textContent = "Pin moved. That's the spot people will see."; });
+      } else marker.setLatLng(pinLL);
+      miniMap.setView(pinLL, zoom || Math.max(miniMap.getZoom(), 17));
+    };
+    if (pinLL) setPin(pinLL, 17);
+    miniMap.on("click", ev => { setPin([ev.latlng.lat, ev.latlng.lng]); mmHint.textContent = "Pin placed. Drag it to fine-tune."; });
+    setTimeout(() => miniMap && miniMap.invalidateSize(), 60);
+
+    sel.onchange = () => {
+      const p = PLACE_BY_NAME.get(sel.value.toLowerCase());
+      if (!p) return;
+      venueName = p.name; setPin([p.lat, p.lng], 17);
+      if (p.category === "area") priv.checked = true;
+      mmHint.textContent = "Pin set to " + p.name + ". Drag it to the exact spot.";
+    };
+    const runSearch = async () => {
+      const q = addr.value.trim();
+      if (!q) return;
+      results.textContent = ""; sbtn.disabled = true; sbtn.textContent = "Searching…";
+      try {
+        const found = await geocode(/durham/i.test(q) ? q : q + ", Durham");
+        if (!found.length) results.appendChild(h("span", "hint", "No match in Durham. Try a street name, or drag the pin."));
+        for (const r of found) {
+          const b = h("button", null, r.display_name.replace(/, (County Durham|England|United Kingdom)/g, "").slice(0, 120)); b.type = "button";
+          b.onclick = () => {
+            setPin([+r.lat, +r.lon], 18); results.textContent = "";
+            if (!venueName || sel.value === "") venueName = (r.name || r.display_name.split(",")[0]).slice(0, 120);
+            mmHint.textContent = "Pin set from the address. Drag it if it's slightly off.";
+          };
+          results.appendChild(b);
+        }
+      } catch (_) { results.appendChild(h("span", "hint", "Address search isn't responding. Drag the pin instead.")); }
+      finally { sbtn.disabled = false; sbtn.textContent = "Search"; }
+    };
+    sbtn.onclick = runSearch;
+    addr.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); runSearch(); } });
+    // From a screenshot with an address but no known venue: look it up straight away
+    if (!matched && (data.address || data.venue_text)) { if (!addr.value) addr.value = data.address || data.venue_text; runSearch(); }
+
+    form.addEventListener("submit", async ev => {
+      ev.preventDefault(); err.hidden = true;
+      const start = londonDate(date.value, st.value);
+      const problems = [];
+      if (!title.value.trim()) problems.push("an event name");
+      if (!start) problems.push("a date and start time");
+      if (!pinLL) problems.push("a place (pick one, search, or tap the map)");
+      if (problems.length) { err.textContent = "Add " + problems.join(", ") + " to post."; err.hidden = false; return; }
+      let end = en.value ? londonDate(date.value, en.value) : null;
+      if (end && end <= start) end = new Date(+end + 864e5);
+      let [lat, lng] = pinLL;
+      if (priv.checked) {
+        const a = Math.random() * Math.PI * 2, dist = 30 + Math.random() * 60;
+        lat += (Math.sin(a) * dist) / 110540; lng += (Math.cos(a) * dist) / (111320 * Math.cos(lat * Math.PI / 180));
+      }
+      const ev2 = {
+        title: title.value.trim(),
+        category: form.querySelector('input[name="fCat"]:checked')?.value || "other",
+        start_at: start.toISOString(), end_at: end ? end.toISOString() : null,
+        venue_name: (sel.value || venueName || "Durham").slice(0, 120),
+        address: priv.checked ? null : (addr.value.trim() || null),
+        lat: +lat.toFixed(6), lng: +lng.toFixed(6),
+        is_private: priv.checked,
+        host: host.value.trim() || null, price: price.value.trim() || null, description: desc.value.trim() || null,
+        from_screenshot: !!fromShot,
+      };
+      post.disabled = true; post.textContent = "Posting…";
+      try {
+        const id = await api.create(ev2);
+        closeAdd(); toast("Posted to the map");
+        const full = { id, ...ev2 };
+        if (!state.events.some(e => e.id === id)) state.events.push(full);
+        if (!inTime(full)) { state.time = "all"; renderChips(); }
+        state.selected = id; renderAll(); focusEvent(full);
+        refresh();
+      } catch (e3) {
+        post.disabled = false; post.textContent = "Post to the map";
+        err.textContent = /Durham/.test(e3.message) ? "That pin is outside Durham. Move it and try again." : "Couldn't post that. Check your signal and try again.";
+        err.hidden = false;
+      }
+    });
+    title.focus();
+  }
+
+  document.addEventListener("keydown", ev => {
+    if (ev.key !== "Escape") return;
+    if (!$("miscOverlay").hidden) $("miscOverlay").hidden = true;
+    else if (!$("addOverlay").hidden) closeAdd();
+    else if (!$("cardOverlay").hidden) closeCard();
+  });
+
+  // ---------- Boot ----------
+  renderChips(); renderList();
+  placeChrome();
+  window.addEventListener("resize", () => { placeChrome(); map.invalidateSize(); });
+  if (!LIVE) {
+    const b = $("banner");
+    b.innerHTML = "<strong>Demo mode.</strong> Events are saved on this phone only until the database is connected.";
+    b.hidden = false;
+  }
+  refresh();
+  setInterval(() => { if (document.visibilityState === "visible" && LIVE) refresh(); }, 20000);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && LIVE) refresh(); });
+})();
+</script>
+</body>
+</html>
