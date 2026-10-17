@@ -182,6 +182,12 @@ button { cursor: pointer; }
 .searchbox input::-webkit-search-cancel-button { display: none; }
 .searchbox .clear { position: absolute; right: 6px; width: 30px; height: 30px; border-radius: 50%; border: 0; background: var(--line); font-size: 16px; line-height: 1; }
 .searchnote { font-size: 12.5px; color: var(--muted); margin: -2px 0 0; }
+.sortbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sortbar .searchnote { margin: 0; }
+.sortseg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 2px; background: var(--card); flex: none; }
+.sortseg button { border: 0; background: none; border-radius: 999px; padding: 5px 11px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.sortseg button.on { background: var(--ink); color: #fff; }
+.item.top .goingpill { color: var(--hot-deep); font-weight: 700; background: var(--hot-soft); padding: 3px 8px; border-radius: 999px; }
 .grab { width: 40px; height: 5px; border-radius: 3px; background: var(--line); justify-self: center; }
 .sheettitle { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .sheettitle h2 { margin: 0; font-family: var(--f-display); font-weight: 800; font-size: 20px; letter-spacing: -0.01em; }
@@ -468,6 +474,7 @@ Klute|Klute Nightclub|venue|54.7750|-1.5728
 Fabio's|Fabios|venue|54.7752|-1.5745
 The Library Bar|Library;Library Bar|venue|54.7758|-1.5748
 Osbournes|Ozzies;Osbournes Bar|venue|54.7787|-1.5795
+Babylon|Babylon Durham;Babylon Bar;Babylon Bar & Kitchen|venue|54.7767|-1.5808
 The Swan and Three Cygnets|Swan;Swan and Cygnets|venue|54.7755|-1.5725
 The Old Elm Tree|Elm Tree|venue|54.7760|-1.5800
 Head of Steam|Head of Steam Durham|venue|54.7780|-1.5790
@@ -588,6 +595,13 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
       store.set("mm_demo_events", store.get("mm_demo_events", []).filter(e => e.id !== id));
       return true;
     },
+    async update(id, ev) {
+      const token = store.get("mm_tokens", {})[id];
+      if (!token) throw new Error("Only the person who posted this event can edit it");
+      if (LIVE) return await api.req("rpc/update_event", { method: "POST", body: JSON.stringify({ p_event_id: id, p_token: token, p_event: ev }) });
+      store.set("mm_demo_events", store.get("mm_demo_events", []).map(e => e.id === id ? { ...e, ...ev } : e));
+      return true;
+    },
     async setGoing(id, going) {
       if (LIVE) return api.req("rpc/set_going", { method: "POST", body: JSON.stringify({ p_event_id: id, p_device: DEVICE, p_going: going }) });
       let g = store.get("mm_demo_going", []).filter(r => !(r.event_id === id && r.device_id === DEVICE));
@@ -597,7 +611,7 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
   };
 
   // ---------- State ----------
-  const state = { events: [], linked: new Map(), going: new Map(), loaded: false, time: "week", cats: new Set(), selected: null, q: "" };
+  const state = { events: [], linked: new Map(), going: new Map(), loaded: false, time: "week", cats: new Set(), selected: null, q: "", sort: "popular" };
   // Invite-only events this phone knows about (made here, or opened from a link)
   const linkIds = () => store.get("mm_links", []);
   const rememberLink = id => { const l = linkIds().filter(x => x !== id); l.unshift(id); store.set("mm_links", l.slice(0, 30)); };
@@ -667,7 +681,7 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
     .filter(e => { if (!searching()) return inTime(e); const t = state.time; state.time = "all"; const ok = inTime(e); state.time = t; return ok; })
     .filter(e => !state.cats.size || state.cats.has(catOf(e)))
     .filter(matchesQuery)
-    .sort((a, b) => new Date(a.start_at) - new Date(b.start_at));
+    .sort((a, b) => (searching() && state.sort === "popular" ? goingCount(b.id) - goingCount(a.id) : 0) || new Date(a.start_at) - new Date(b.start_at));
 
   // ---------- Map ----------
   const map = L.map("map", { zoomControl: false, attributionControl: true, tap: true }).setView(HOME.center, HOME.zoom);
@@ -796,7 +810,17 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
     $("sheetTitle").textContent = searching() ? "Search" : TIMES.find(t => t.id === state.time).label;
     $("sheetCount").textContent = state.loaded ? `${evs.length} ${searching() ? "match" + (evs.length === 1 ? "" : "es") : "event" + (evs.length === 1 ? "" : "s")}` : "Loading…";
     if (!state.loaded) return;
-    if (searching()) list.appendChild(h("p", "searchnote", "Showing all upcoming events" + (state.cats.size ? " in the chosen categories" : "") + "."));
+    if (searching()) {
+      const bar = h("div", "sortbar");
+      bar.appendChild(h("p", "searchnote", "All upcoming events" + (state.cats.size ? " in the chosen categories" : "")));
+      const seg = h("div", "sortseg"); seg.setAttribute("role", "group"); seg.setAttribute("aria-label", "Sort results");
+      for (const [id, label] of [["popular", "Most going"], ["soon", "Soonest"]]) {
+        const b = h("button", state.sort === id ? "on" : null, label); b.type = "button"; b.setAttribute("aria-pressed", String(state.sort === id));
+        b.onclick = () => { state.sort = id; renderList(); };
+        seg.appendChild(b);
+      }
+      bar.appendChild(seg); list.appendChild(bar);
+    }
     if (!evs.length) {
       const box = h("div", "empty");
       if (searching()) box.append(h("strong", null, `Nothing matches "${state.q.trim()}"`), h("span", null, "Try a venue, a college nickname like Cuth's, a host, or a day like Friday."));
@@ -804,8 +828,9 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
       else box.append(h("strong", null, "Nothing matches"), h("span", null, "Try All upcoming, or clear the category filters."));
       list.appendChild(box); return;
     }
-    for (const e of evs) {
-      const b = h("button", "item");
+    const ranked = searching() && state.sort === "popular";
+    evs.forEach((e, idx) => {
+      const b = h("button", "item" + (ranked && idx < 3 && goingCount(e.id) ? " top" : ""));
       const start = new Date(e.start_at);
       const when = h("span", "when");
       when.append(h("b", null, dayKey(start) === dayKey(new Date()) ? "Today" : fmt(start, { weekday: "short", day: "numeric" })), h("strong", null, hm(start)));
@@ -819,7 +844,7 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
       b.append(when, what, h("span", "goingpill" + (iAmGoing(e.id) ? " me" : ""), n ? `${n} going` : ""));
       b.onclick = () => { focusEvent(e); openCard(e.id); };
       list.appendChild(b);
-    }
+    });
   }
   function renderAll() { renderList(); drawPins(); refreshCard(); }
 
@@ -926,6 +951,9 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
       actions.appendChild(a);
     }
     if (isMine(e.id)) {
+      const edit = h("button", "btn", "Edit");
+      edit.onclick = () => openAdd(e);
+      actions.appendChild(edit);
       const del = h("button", "btn danger", "Delete");
       del.onclick = async () => {
         if (del.dataset.c !== "1") { del.dataset.c = "1"; del.textContent = "Tap again to delete"; return; }
@@ -1039,19 +1067,32 @@ Use the event's own name as title (short, no emojis). Never guess a date or time
 
   // ---------- Add event ----------
   let extractCtl = null, miniMap = null;
-  $("fab").onclick = openAdd;
+  $("fab").onclick = () => openAdd();
   $("addOverlay").addEventListener("click", ev => { if (ev.target === $("addOverlay")) closeAdd(); });
   function closeAdd() { if (extractCtl) extractCtl.abort(); if (miniMap) { miniMap.remove(); miniMap = null; } $("addOverlay").hidden = true; $("addOverlay").textContent = ""; }
-  function openAdd() {
+  function openAdd(editing) {
     const ov = $("addOverlay"); ov.textContent = "";
-    const d = h("div", "dialog"); d.setAttribute("role", "dialog"); d.setAttribute("aria-modal", "true"); d.setAttribute("aria-label", "Add event");
+    if (editing) $("cardOverlay").hidden = true;
+    const d = h("div", "dialog"); d.setAttribute("role", "dialog"); d.setAttribute("aria-modal", "true"); d.setAttribute("aria-label", editing ? "Edit event" : "Add event");
     const head = h("div", "dhead"); const left = h("div");
-    left.append(h("span", "tag", "New motive"), h("h3", null, "Add an event"));
+    left.append(h("span", "tag", editing ? "Your event" : "New motive"), h("h3", null, editing ? "Edit event" : "Add an event"));
     const close = h("button", "close", "×"); close.setAttribute("aria-label", "Close"); close.onclick = closeAdd;
     head.append(left, close); d.appendChild(head);
     const body = h("div"); body.id = "addBody"; body.style.cssText = "display:grid;gap:14px";
     d.appendChild(body); ov.appendChild(d); ov.hidden = false;
-    renderPick(body); close.focus();
+    if (editing) renderForm(body, eventToForm(editing), null, false, editing); else renderPick(body);
+    close.focus();
+  }
+  function eventToForm(e) {
+    const s = londonParts(new Date(e.start_at));
+    return {
+      title: e.title, category: e.category, date: s.date, start_time: s.time,
+      end_time: e.end_at ? londonParts(new Date(e.end_at)).time : "",
+      venue_match: e.venue_name, address: e.address || "", is_private: !!e.is_private,
+      host: e.host || "", price: e.price || "", description: e.description || "",
+      visibility: e.visibility === "link" ? "link" : "public",
+      stops: stopsOf(e).map(x => ({ time: londonParts(new Date(x.time)).time, name: x.name, lat: +x.lat, lng: +x.lng })),
+    };
   }
   function renderPick(body) {
     if (miniMap) { miniMap.remove(); miniMap = null; }
@@ -1125,7 +1166,7 @@ Use the event's own name as title (short, no emojis). Never guess a date or time
     return res.json();
   }
 
-  function renderForm(body, data, warning, fromShot) {
+  function renderForm(body, data, warning, fromShot, editing) {
     if (miniMap) { miniMap.remove(); miniMap = null; }
     body.textContent = "";
     if (warning) body.appendChild(h("div", "note warn", warning));
@@ -1184,7 +1225,7 @@ Use the event's own name as title (short, no emojis). Never guess a date or time
     const addStop = h("button", "btn", "+ Add a stop"); addStop.type = "button";
     route.append(stopList, addStop);
     form.appendChild(route);
-    const stops = []; let activeStop = null, stopLayer = null;
+    const stops = (data.stops || []).map(x => ({ ...x })); let activeStop = null, stopLayer = null;
     const fillPlaces = selEl => {
       for (const [cat, label] of Object.entries({ venue: "Bars and clubs", college: "Colleges", area: "Areas (house parties)", university: "University", sport: "Sport", landmark: "Around town", outdoor: "Outdoors" })) {
         const og = h("optgroup"); og.label = label;
@@ -1246,7 +1287,9 @@ Use the event's own name as title (short, no emojis). Never guess a date or time
     let pinLL = null, venueName = "";
     const matched = matchPlace(data.venue_match, data.venue_text);
     if (matched) { sel.value = matched.name; venueName = matched.name; pinLL = [matched.lat, matched.lng]; }
-    if (data.venue_text) {
+    if (editing) { venueName = editing.venue_name || venueName; pinLL = [+editing.lat, +editing.lng]; }
+    let pinMoved = false;
+    if (data.venue_text && !editing) {
       const hint = h("span", "hint hot", matched && matched.name.toLowerCase() === String(data.venue_text).toLowerCase() ? "" : `Poster says "${data.venue_text}".`);
       if (hint.textContent) vf.appendChild(hint);
     }
@@ -1261,7 +1304,7 @@ Use the event's own name as title (short, no emojis). Never guess a date or time
     const vf2 = h("div", "field"); vf2.appendChild(h("span", "lbl", "Who can see it"));
     const seg = h("div", "cats seg"); seg.setAttribute("role", "radiogroup"); seg.setAttribute("aria-label", "Who can see it");
     for (const [val, label, sub] of [["public", "Public", "On the map for everyone"], ["link", "Invite only", "Only people you send the link to"]]) {
-      const r = h("input"); r.type = "radio"; r.name = "fVis"; r.id = "fVis-" + val; r.value = val; r.checked = val === "public";
+      const r = h("input"); r.type = "radio"; r.name = "fVis"; r.id = "fVis-" + val; r.value = val; r.checked = val === (data.visibility || "public");
       const l = h("label"); l.htmlFor = r.id; l.append(h("strong", null, label), h("small", null, sub));
       seg.append(r, l);
     }
@@ -1278,7 +1321,9 @@ Use the event's own name as title (short, no emojis). Never guess a date or time
     const err = h("div", "err"); err.hidden = true; form.appendChild(err);
     const acts = h("div", "actions");
     const post = h("button", "btn primary", "Post to the map"); post.type = "submit";
-    const back = h("button", "btn", fromShot || warning ? "Try another screenshot" : "Back"); back.type = "button"; back.onclick = () => renderPick(body);
+    if (editing) post.textContent = "Save changes";
+    const back = h("button", "btn", editing ? "Cancel" : fromShot || warning ? "Try another screenshot" : "Back"); back.type = "button";
+    back.onclick = () => { if (editing) { closeAdd(); openCard(editing.id); } else renderPick(body); };
     acts.append(post, back); form.appendChild(acts);
     body.appendChild(form);
 
@@ -1288,15 +1333,16 @@ Use the event's own name as title (short, no emojis). Never guess a date or time
     const pinIcon = L.divIcon({ className: "", iconSize: [0, 0], html: `<div class="pin-wrap selected" style="--c:var(--hot)"><span class="pin"></span></div>` });
     let marker = null;
     const setPin = (ll, zoom) => {
-      pinLL = [ll[0], ll[1]];
+      pinLL = [ll[0], ll[1]]; pinMoved = true;
       if (!marker) {
         marker = L.marker(pinLL, { draggable: true, icon: pinIcon, autoPan: true }).addTo(miniMap);
-        marker.on("dragend", () => { const p = marker.getLatLng(); pinLL = [p.lat, p.lng]; drawMiniStops(); mmHint.textContent = "Pin moved. That's the spot people will see."; });
+        marker.on("dragend", () => { const p = marker.getLatLng(); pinLL = [p.lat, p.lng]; pinMoved = true; drawMiniStops(); mmHint.textContent = "Pin moved. That's the spot people will see."; });
       } else marker.setLatLng(pinLL);
       miniMap.setView(pinLL, zoom || Math.max(miniMap.getZoom(), 17));
       drawMiniStops();
     };
-    if (pinLL) setPin(pinLL, 17);
+    if (pinLL) { setPin(pinLL, 17); pinMoved = false; }
+    renderStops(); drawMiniStops();
     miniMap.on("click", ev => {
       if (activeStop !== null && stops[activeStop]) {
         const x = stops[activeStop], n = activeStop + 2;
@@ -1339,7 +1385,7 @@ Use the event's own name as title (short, no emojis). Never guess a date or time
     sbtn.onclick = runSearch;
     addr.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); runSearch(); } });
     // From a screenshot with an address but no known venue: look it up straight away
-    if (!matched && (data.address || data.venue_text)) { if (!addr.value) addr.value = data.address || data.venue_text; runSearch(); }
+    if (!editing && !matched && (data.address || data.venue_text)) { if (!addr.value) addr.value = data.address || data.venue_text; runSearch(); }
 
     form.addEventListener("submit", async ev => {
       ev.preventDefault(); err.hidden = true;
@@ -1362,7 +1408,8 @@ Use the event's own name as title (short, no emojis). Never guess a date or time
       let end = en.value ? londonDate(date.value, en.value) : null;
       if (end && end <= start) end = new Date(+end + 864e5);
       let [lat, lng] = pinLL;
-      if (priv.checked) {
+      // Blur private addresses, but don't nudge an already-blurred pin again on every edit
+      if (priv.checked && !(editing && editing.is_private && !pinMoved)) {
         const a = Math.random() * Math.PI * 2, dist = 30 + Math.random() * 60;
         lat += (Math.sin(a) * dist) / 110540; lng += (Math.cos(a) * dist) / (111320 * Math.cos(lat * Math.PI / 180));
       }
@@ -1375,9 +1422,27 @@ Use the event's own name as title (short, no emojis). Never guess a date or time
         lat: +lat.toFixed(6), lng: +lng.toFixed(6),
         is_private: priv.checked,
         host: host.value.trim() || null, price: price.value.trim() || null, description: desc.value.trim() || null,
-        from_screenshot: !!fromShot,
+        from_screenshot: editing ? !!editing.from_screenshot : !!fromShot,
         visibility, stops: stopsOut,
       };
+      if (editing) {
+        post.disabled = true; post.textContent = "Saving…";
+        try {
+          await api.update(editing.id, ev2);
+          const full = { ...editing, ...ev2 };
+          state.events = state.events.filter(x => x.id !== editing.id); state.linked.delete(editing.id);
+          if (visibility === "link") { rememberLink(editing.id); state.linked.set(editing.id, full); } else state.events.push(full);
+          closeAdd(); toast("Changes saved");
+          if (!inTime(full)) { state.time = "all"; renderChips(); }
+          state.selected = editing.id; renderAll(); focusEvent(full); openCard(editing.id);
+          refresh();
+        } catch (e3) {
+          post.disabled = false; post.textContent = "Save changes";
+          err.textContent = /Durham/.test(e3.message) ? "That pin is outside Durham. Move it and try again." : /posted/.test(e3.message) ? "Only the phone that posted this event can edit it." : "Couldn't save that. Check your signal and try again.";
+          err.hidden = false;
+        }
+        return;
+      }
       post.disabled = true; post.textContent = "Posting…";
       try {
         const id = await api.create(ev2);
