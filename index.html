@@ -9,6 +9,11 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="icon" href="favicon-64.png" type="image/png" sizes="64x64">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="MotiveMap">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="MotiveMap">
 <meta property="og:title" content="MotiveMap · Every student event in Durham, one map">
@@ -187,7 +192,7 @@ button { cursor: pointer; }
 .sortseg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 2px; background: var(--card); flex: none; }
 .sortseg button { border: 0; background: none; border-radius: 999px; padding: 5px 11px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
 .sortseg button.on { background: var(--ink); color: #fff; }
-.item.top .goingpill { color: var(--hot-deep); font-weight: 700; background: var(--hot-soft); padding: 3px 8px; border-radius: 999px; }
+.item.ranked .goingpill { color: var(--hot-deep); font-weight: 700; background: var(--hot-soft); padding: 3px 8px; border-radius: 999px; }
 .grab { width: 40px; height: 5px; border-radius: 3px; background: var(--line); justify-self: center; }
 .sheettitle { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .sheettitle h2 { margin: 0; font-family: var(--f-display); font-weight: 800; font-size: 20px; letter-spacing: -0.01em; }
@@ -256,6 +261,9 @@ button { cursor: pointer; }
 .btn.primary { background: var(--hot); color: var(--hot-ink); border-color: var(--hot); }
 .btn.dark { background: var(--ink); color: var(--card); border-color: var(--ink); }
 .btn.on { background: transparent; color: var(--hot); border-color: var(--hot); }
+@keyframes bump { 0% { transform: scale(1); } 30% { transform: scale(1.18); box-shadow: 0 0 0 6px var(--hot-soft); } 100% { transform: scale(1); } }
+.bump { animation: bump .7s ease-out; }
+.goingpill.bump { display: inline-block; color: var(--hot-deep); font-weight: 700; }
 .btn.danger { color: var(--danger); }
 .btn:disabled { opacity: .5; }
 .linkish { background: none; border: 0; color: var(--hot); font-weight: 700; padding: 4px 0; text-decoration: underline; text-underline-offset: 3px; justify-self: start; }
@@ -350,6 +358,8 @@ form.eventform { display: grid; gap: 12px; }
   background: var(--ink); color: var(--card); padding: 10px 16px; border-radius: 999px;
   font-weight: 600; font-size: 14px; max-width: calc(100% - 32px); text-align: center;
 }
+
+body:has(#cardOverlay:not([hidden])) #toast { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 112px); }
 
 @media (min-width: 900px) {
   #sheet { left: auto; top: 0; width: 400px; height: auto !important; min-height: 0; border-radius: 0; border-left: 1px solid var(--line); box-shadow: none; padding-top: env(safe-area-inset-top, 0px); }
@@ -633,10 +643,21 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
       want.forEach((id, i) => { if (got[i]) state.linked.set(id, got[i]); else if (got[i] === null) state.linked.delete(id); });
       const m = new Map();
       for (const r of going || []) { if (!m.has(r.event_id)) m.set(r.event_id, new Set()); m.get(r.event_id).add(r.device_id); }
+      // Who joined since the last refresh (other people only), so the counts visibly tick up
+      const rose = [];
+      if (state.loaded) for (const [id, set] of m) {
+        const before = state.going.get(id) || new Set();
+        if ([...set].some(d => d !== DEVICE && !before.has(d))) rose.push(id);
+      }
       state.going = m;
       state.loaded = true;
       if (LIVE) $("banner").hidden = true;
       renderAll();
+      if (rose.length) {
+        document.querySelectorAll("[data-going]").forEach(el => { if (rose.includes(el.dataset.going)) { el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump"); } });
+        const ev = findEvent(rose[0]);
+        if (ev && $("addOverlay").hidden) toast(rose.length > 1 ? `${rose.length} events just got new people going` : `Someone just joined ${ev.title} · ${goingCount(ev.id)} going`);
+      }
     } catch (err) {
       state.loaded = true;
       const b = $("banner"); b.textContent = "Can't reach the events right now. Check your signal; the map will retry."; b.hidden = false;
@@ -830,7 +851,7 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
     }
     const ranked = searching() && state.sort === "popular";
     evs.forEach((e, idx) => {
-      const b = h("button", "item" + (ranked && idx < 3 && goingCount(e.id) ? " top" : ""));
+      const b = h("button", "item" + (ranked && idx < 3 && goingCount(e.id) ? " ranked" : ""));
       const start = new Date(e.start_at);
       const when = h("span", "when");
       when.append(h("b", null, dayKey(start) === dayKey(new Date()) ? "Today" : fmt(start, { weekday: "short", day: "numeric" })), h("strong", null, hm(start)));
@@ -841,7 +862,8 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
       if (stopsOf(e).length) s.append(` · ${stopsOf(e).length + 1} stops`);
       what.append(tt, s);
       const n = goingCount(e.id);
-      b.append(when, what, h("span", "goingpill" + (iAmGoing(e.id) ? " me" : ""), n ? `${n} going` : ""));
+      const gp = h("span", "goingpill" + (iAmGoing(e.id) ? " me" : ""), n ? `${n} going` : ""); gp.dataset.going = e.id;
+      b.append(when, what, gp);
       b.onclick = () => { focusEvent(e); openCard(e.id); };
       list.appendChild(b);
     });
@@ -871,6 +893,8 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
     if (!open && ov.hidden) return;
     const e = findEvent(state.selected);
     if (!e) { ov.hidden = true; return; }
+    if (!open && ov.querySelector('[data-c="1"]')) return; // mid "tap again to delete"
+    const prevScroll = open ? 0 : (ov.querySelector(".dialog")?.scrollTop || 0);
     ov.textContent = "";
     const d = h("div", "dialog"); d.setAttribute("role", "dialog"); d.setAttribute("aria-modal", "true"); d.setAttribute("aria-labelledby", "cardTitle");
     const head = h("div", "dhead"); const left = h("div");
@@ -932,6 +956,7 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
         renderAll();
       } catch (_) { go.disabled = false; toast("Couldn't save that. Try again."); }
     };
+    go.dataset.going = e.id;
     actions.appendChild(go);
     const shareBtn = h("button", "btn", "Share");
     shareBtn.onclick = async () => {
@@ -965,6 +990,7 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
     }
     d.appendChild(actions);
     ov.appendChild(d); ov.hidden = false;
+    if (prevScroll) d.scrollTop = prevScroll;
     if (open) close.focus();
   }
 
@@ -1494,7 +1520,7 @@ Use the event's own name as title (short, no emojis). Never guess a date or time
     if (!inTime(e)) { state.time = "all"; renderChips(); renderAll(); }
     focusEvent(e); openCard(e.id);
   });
-  setInterval(() => { if (document.visibilityState === "visible" && LIVE) refresh(); }, 20000);
+  setInterval(() => { if (document.visibilityState === "visible" && LIVE && $("addOverlay").hidden) refresh(); }, 8000);
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && LIVE) refresh(); });
 })();
 </script>
