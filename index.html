@@ -337,6 +337,20 @@ form.eventform { display: grid; gap: 12px; }
   text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff, 0 0 4px #fff; pointer-events: none;
 }
 .routehead { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.chat { display: grid; gap: 10px; border-top: 1px solid var(--line); padding-top: 14px; }
+.chatlist { display: grid; gap: 8px; max-height: 260px; overflow-y: auto; }
+.msg { background: var(--soft); border-radius: 14px; padding: 8px 12px; display: grid; gap: 2px; justify-self: start; max-width: 88%; }
+.msg.mine { justify-self: end; background: var(--hot-soft); }
+.msg .who { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.msg .who b { color: var(--ink); font-weight: 700; }
+.msg .hostbadge { background: var(--ink); color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 1px 6px; border-radius: 999px; }
+.msg .txt { font-size: 14.5px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.msg .rm { background: none; border: 0; color: var(--muted); font-size: 12px; padding: 0; margin-left: auto; text-decoration: underline; }
+.chatempty { font-size: 13px; color: var(--muted); }
+.chatform { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.chatform input { width: 100%; min-width: 0; border: 1px solid #d3d6e0; border-radius: 999px; padding: 10px 14px; font-size: 16px; background: var(--card); }
+.chatform input:focus { outline: none; border-color: var(--hot); box-shadow: 0 0 0 3px var(--hot-soft); }
+.chatform .nameinput { grid-column: 1 / -1; }
 .lbl2 { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .timeline { list-style: none; margin: 0; padding: 0; display: grid; }
 .timeline li { display: grid; grid-template-columns: 24px 50px 1fr auto; gap: 10px; align-items: center; padding: 7px 0; position: relative; cursor: pointer; }
@@ -612,6 +626,22 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
       store.set("mm_demo_events", store.get("mm_demo_events", []).map(e => e.id === id ? { ...e, ...ev } : e));
       return true;
     },
+    async comments(id) {
+      if (LIVE) return await api.req("rpc/get_comments", { method: "POST", body: JSON.stringify({ p_event_id: id, p_device: DEVICE }) }) || [];
+      return store.get("mm_demo_comments", []).filter(c => c.event_id === id).map(c => ({ ...c, mine: c.device_id === DEVICE }));
+    },
+    async addComment(id, name, body) {
+      const token = store.get("mm_tokens", {})[id] || null;
+      if (LIVE) return api.req("rpc/add_comment", { method: "POST", body: JSON.stringify({ p_event_id: id, p_device: DEVICE, p_name: name, p_body: body, p_token: token }) });
+      const all = store.get("mm_demo_comments", []);
+      all.push({ id: randomId(8), event_id: id, device_id: DEVICE, name: name || "Someone", body, is_host: !!token, created_at: new Date().toISOString() });
+      store.set("mm_demo_comments", all);
+    },
+    async deleteComment(cid, eventId) {
+      const token = store.get("mm_tokens", {})[eventId] || null;
+      if (LIVE) return api.req("rpc/delete_comment", { method: "POST", body: JSON.stringify({ p_comment_id: cid, p_device: DEVICE, p_token: token }) });
+      store.set("mm_demo_comments", store.get("mm_demo_comments", []).filter(c => c.id !== cid));
+    },
     async setGoing(id, going) {
       if (LIVE) return api.req("rpc/set_going", { method: "POST", body: JSON.stringify({ p_event_id: id, p_device: DEVICE, p_going: going }) });
       let g = store.get("mm_demo_going", []).filter(r => !(r.event_id === id && r.device_id === DEVICE));
@@ -653,6 +683,7 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
       state.loaded = true;
       if (LIVE) $("banner").hidden = true;
       renderAll();
+      loadChat();
       if (rose.length) {
         document.querySelectorAll("[data-going]").forEach(el => { if (rose.includes(el.dataset.going)) { el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump"); } });
         const ev = findEvent(rose[0]);
@@ -894,6 +925,7 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
     const e = findEvent(state.selected);
     if (!e) { ov.hidden = true; return; }
     if (!open && ov.querySelector('[data-c="1"]')) return; // mid "tap again to delete"
+    if (!open && ov.contains(document.activeElement) && document.activeElement.matches("input")) return; // typing in the chat
     const prevScroll = open ? 0 : (ov.querySelector(".dialog")?.scrollTop || 0);
     ov.textContent = "";
     const d = h("div", "dialog"); d.setAttribute("role", "dialog"); d.setAttribute("aria-modal", "true"); d.setAttribute("aria-labelledby", "cardTitle");
@@ -989,9 +1021,100 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
       actions.appendChild(del);
     }
     d.appendChild(actions);
+    d.appendChild(chatBlock(e, open));
     ov.appendChild(d); ov.hidden = false;
     if (prevScroll) d.scrollTop = prevScroll;
     if (open) close.focus();
+  }
+
+  // ---------- Event chat ----------
+  const chat = { id: null, items: [], loaded: false, draft: "", busy: false };
+  const ago = iso => {
+    const m = Math.round((Date.now() - new Date(iso)) / 60000);
+    if (m < 1) return "just now"; if (m < 60) return m + " min ago";
+    const hh = Math.round(m / 60); if (hh < 24) return hh + " h ago";
+    return fmt(new Date(iso), { day: "numeric", month: "short" });
+  };
+  function chatBlock(e, open) {
+    if (chat.id !== e.id) { chat.id = e.id; chat.items = []; chat.loaded = false; chat.draft = ""; }
+    if (open) setTimeout(() => loadChat(true), 0);
+    const box = h("section", "chat"); box.setAttribute("aria-label", "Chat");
+    const head = h("div", "routehead"); head.id = "chatHead";
+    box.appendChild(head);
+    const list = h("div", "chatlist"); list.id = "chatList"; list.setAttribute("aria-live", "polite");
+    box.appendChild(list);
+    const form = h("form", "chatform"); form.noValidate = true;
+    const savedName = store.get("mm_name", "");
+    let nameIn = null;
+    if (!savedName) {
+      nameIn = h("input", "nameinput"); nameIn.placeholder = "Your name (shown with your messages)"; nameIn.maxLength = 30; nameIn.autocomplete = "nickname";
+      nameIn.setAttribute("aria-label", "Your name");
+      form.appendChild(nameIn);
+    }
+    const msg = h("input"); msg.placeholder = isMine(e.id) ? "Post an update or reply…" : "Ask a question or say you're coming…"; msg.maxLength = 280;
+    msg.setAttribute("aria-label", "Message"); msg.value = chat.draft; msg.enterKeyHint = "send";
+    msg.oninput = () => { chat.draft = msg.value; };
+    const send = h("button", "btn primary", "Send"); send.type = "submit";
+    form.append(msg, send);
+    form.addEventListener("submit", async ev => {
+      ev.preventDefault();
+      const body = msg.value.trim(); if (!body || chat.busy) return;
+      const name = nameIn ? nameIn.value.trim() : savedName;
+      if (nameIn && !name) { nameIn.focus(); toast("Add your name first"); return; }
+      chat.busy = true; send.disabled = true;
+      try {
+        await api.addComment(e.id, name, body);
+        if (nameIn) store.set("mm_name", name);
+        chat.draft = ""; msg.value = "";
+        if (nameIn) { nameIn.remove(); nameIn = null; }
+        await loadChat(true);
+        msg.focus();
+      } catch (err) { toast(/Slow down/.test(err.message) ? "Slow down a little, then try again." : "Couldn't send that. Try again."); }
+      finally { chat.busy = false; send.disabled = false; }
+    });
+    box.appendChild(form);
+    setTimeout(() => renderChat(false), 0);
+    return box;
+  }
+  async function loadChat(scroll) {
+    const id = state.selected;
+    if (!id || $("cardOverlay").hidden) return;
+    try {
+      const items = await api.comments(id);
+      if (state.selected !== id) return;
+      const grew = items.length > chat.items.length;
+      chat.items = items || []; chat.loaded = true;
+      renderChat(scroll || grew);
+    } catch (_) { chat.loaded = true; renderChat(false); }
+  }
+  function renderChat(scroll) {
+    const list = $("chatList"), head = $("chatHead");
+    if (!list || !head) return;
+    head.textContent = "";
+    head.append(h("span", "lbl2", "Chat" + (chat.items.length ? " · " + chat.items.length : "")), h("span", "hint", "Visible to everyone who can see this event"));
+    const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+    list.textContent = "";
+    if (!chat.loaded) { list.appendChild(h("span", "chatempty", "Loading chat…")); return; }
+    if (!chat.items.length) { list.appendChild(h("span", "chatempty", "No messages yet. Ask about dress code, timings or tickets.")); return; }
+    for (const c of chat.items) {
+      const m = h("div", "msg" + (c.mine ? " mine" : ""));
+      const who = h("span", "who");
+      who.append(h("b", null, c.mine ? "You" : c.name));
+      if (c.is_host) who.appendChild(h("span", "hostbadge", "Host"));
+      who.append(ago(c.created_at));
+      if (c.mine || isMine(chat.id)) {
+        const rm = h("button", "rm", "Delete"); rm.type = "button";
+        rm.setAttribute("aria-label", "Delete this message");
+        rm.onclick = async () => {
+          if (rm.dataset.c !== "1") { rm.dataset.c = "1"; rm.textContent = "Tap again"; return; }
+          try { await api.deleteComment(c.id, chat.id); await loadChat(); } catch (_) { toast("Couldn't delete that."); }
+        };
+        who.appendChild(rm);
+      }
+      m.append(who, h("span", "txt", c.body));
+      list.appendChild(m);
+    }
+    if (scroll || atBottom) list.scrollTop = list.scrollHeight;
   }
 
   // ---------- Share (QR) ----------
