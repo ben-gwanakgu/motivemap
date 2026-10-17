@@ -286,6 +286,40 @@ form.eventform { display: grid; gap: 12px; }
 .cats input:checked + label { background: var(--ink); color: var(--card); border-color: var(--ink); }
 .cats input:focus-visible + label { outline: 2px solid var(--hot); outline-offset: 2px; }
 .cats .dot { width: 8px; height: 8px; border-radius: 50%; }
+#cardOverlay { background: rgba(15,13,20,.16); }
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.seg label { flex-direction: column; align-items: flex-start; border-radius: 14px; padding: 10px 12px; gap: 2px; }
+.seg label small { font-weight: 400; font-size: 12px; color: var(--muted); }
+.cats input:checked + label small { color: inherit; opacity: .8; }
+.stops { display: grid; gap: 8px; }
+.stoprow { display: grid; grid-template-columns: 26px 96px 1fr auto auto; gap: 6px; align-items: center; }
+.stoprow input, .stoprow select { border: 1px solid #d3d6e0; border-radius: 10px; padding: 8px; min-width: 0; width: 100%; background: var(--card); }
+.stoprow.active input, .stoprow.active select { border-color: var(--hot); }
+@media (max-width: 440px) { .stoprow { grid-template-columns: 26px 1fr auto auto; } .stoprow select { grid-column: 2 / -1; grid-row: 2; } }
+.stopnum { width: 24px; height: 24px; border-radius: 50%; background: var(--hot); color: #fff; display: grid; place-items: center; font-weight: 800; font-size: 12px; flex: none; }
+.pinbtn { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 7px 10px; font-size: 12.5px; font-weight: 700; white-space: nowrap; }
+.stoprow.active .pinbtn { background: var(--hot); color: #fff; border-color: var(--hot); }
+.rmbtn { width: 30px; height: 30px; border-radius: 50%; border: 0; background: var(--soft); font-size: 16px; line-height: 1; }
+.stopmark {
+  position: absolute; width: 24px; height: 24px; margin: -12px 0 0 -12px; border-radius: 50%;
+  background: var(--c); color: #fff; border: 2.5px solid #fff; display: grid; place-items: center;
+  font: 800 12px var(--f-body); box-shadow: 0 2px 6px rgba(15,13,20,.35);
+}
+.stop-label {
+  position: absolute; left: 17px; top: -9px; white-space: nowrap; font-weight: 700; font-size: 12px; color: var(--ink);
+  text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff, 0 0 4px #fff; pointer-events: none;
+}
+.routehead { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.lbl2 { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.timeline { list-style: none; margin: 0; padding: 0; display: grid; }
+.timeline li { display: grid; grid-template-columns: 24px 50px 1fr auto; gap: 10px; align-items: center; padding: 7px 0; position: relative; cursor: pointer; }
+.timeline li:not(:last-child)::after { content: ""; position: absolute; left: 11px; top: 33px; bottom: -9px; border-left: 2px dotted var(--hot); }
+.timeline li .nm { min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+.timeline li.next .stopnum { box-shadow: 0 0 0 4px var(--hot-soft); }
+.timeline li.next .nm::after { content: " · next"; color: var(--hot-deep); font-weight: 700; font-size: 12.5px; }
+.timeline li.past { opacity: .5; }
+.minilink { font-size: 13px; font-weight: 700; color: var(--hot-deep); text-decoration: none; border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; }
+.invite { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: var(--hot-deep); background: var(--hot-soft); border-radius: 999px; padding: 1px 7px; margin-left: 6px; vertical-align: 2px; }
 .qrbox { display: grid; justify-items: center; gap: 12px; padding: 8px 0; }
 #qr { background: #fff; padding: 14px; border-radius: 16px; border: 1px solid var(--line); }
 #qr img, #qr canvas { display: block; width: 240px; height: 240px; }
@@ -529,6 +563,11 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
       const tokens = store.get("mm_tokens", {}); tokens[id] = token; store.set("mm_tokens", tokens);
       return id;
     },
+    async getEvent(id) {
+      if (!/^[0-9a-f-]{8,40}$/i.test(id)) return null;
+      if (LIVE) { const rows = await api.req("rpc/get_event", { method: "POST", body: JSON.stringify({ p_event_id: id }) }); return (rows && rows[0]) || null; }
+      return store.get("mm_demo_events", []).find(e => e.id === id) || null;
+    },
     async remove(id) {
       const token = store.get("mm_tokens", {})[id];
       if (!token) return false;
@@ -545,7 +584,14 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
   };
 
   // ---------- State ----------
-  const state = { events: [], going: new Map(), loaded: false, time: "week", cats: new Set(), selected: null, q: "" };
+  const state = { events: [], linked: new Map(), going: new Map(), loaded: false, time: "week", cats: new Set(), selected: null, q: "" };
+  // Invite-only events this phone knows about (made here, or opened from a link)
+  const linkIds = () => store.get("mm_links", []);
+  const rememberLink = id => { const l = linkIds().filter(x => x !== id); l.unshift(id); store.set("mm_links", l.slice(0, 30)); };
+  const allEvents = () => { const ids = new Set(state.events.map(e => e.id)); return [...state.events, ...[...state.linked.values()].filter(e => !ids.has(e.id))]; };
+  const findEvent = id => allEvents().find(e => e.id === id);
+  const stopsOf = e => Array.isArray(e && e.stops) ? e.stops.filter(s => s && Number.isFinite(+s.lat) && Number.isFinite(+s.lng)) : [];
+  const eventUrl = id => location.origin + location.pathname + "?e=" + encodeURIComponent(id);
   function goingCount(id) { return (state.going.get(id) || new Set()).size; }
   const iAmGoing = id => (state.going.get(id) || new Set()).has(DEVICE);
   const isMine = id => !!store.get("mm_tokens", {})[id];
@@ -554,6 +600,10 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
     try {
       const { events, going } = await api.load();
       state.events = (events || []).filter(e => e.start_at && Number.isFinite(+e.lat) && Number.isFinite(+e.lng));
+      const publicIds = new Set(state.events.map(e => e.id));
+      const want = linkIds().filter(id => !publicIds.has(id));
+      const got = await Promise.all(want.map(id => api.getEvent(id).catch(() => undefined)));
+      want.forEach((id, i) => { if (got[i]) state.linked.set(id, got[i]); else if (got[i] === null) state.linked.delete(id); });
       const m = new Map();
       for (const r of going || []) { if (!m.has(r.event_id)) m.set(r.event_id, new Set()); m.get(r.event_id).add(r.device_id); }
       state.going = m;
@@ -571,7 +621,9 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
   function inTime(e, now = new Date()) {
     const start = new Date(e.start_at);
     if (Number.isNaN(+start)) return false;
-    const end = e.end_at ? new Date(e.end_at) : new Date(+start + 4 * 3600e3);
+    let end = e.end_at ? new Date(e.end_at) : new Date(+start + 4 * 3600e3);
+    const st = stopsOf(e);
+    if (st.length) { const last = new Date(st[st.length - 1].time); if (!Number.isNaN(+last) && +last + 3 * 3600e3 > +end) end = new Date(+last + 3 * 3600e3); }
     if (end < now) return false;
     if (state.time === "all") return true;
     if (state.time === "week") return start - now < 7 * 864e5;
@@ -583,7 +635,9 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
     const parts = [e.title, e.venue_name, e.host, e.description, e.price, CATS[catOf(e)].label,
       e.is_private ? "house party private" : e.address,
       Number.isNaN(+d) ? "" : fmt(d, { weekday: "long" }) + " " + fmt(d, { day: "numeric", month: "long" }),
-      dayKey(d) === dayKey(new Date()) ? "today tonight" : ""];
+      dayKey(d) === dayKey(new Date()) ? "today tonight" : "",
+      e.visibility === "link" ? "invite only" : "",
+      stopsOf(e).map(x => x.name).join(" ")];
     const p = PLACE_BY_NAME.get(String(e.venue_name || "").toLowerCase());
     if (p) parts.push(p.aliases.join(" "));
     return norm(parts.join(" "));
@@ -596,7 +650,7 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
   }
   const searching = () => state.q.trim().length > 0;
   // While searching, look through all upcoming events, not just the chosen time window
-  const visibleEvents = () => state.events
+  const visibleEvents = () => allEvents()
     .filter(e => { if (!searching()) return inTime(e); const t = state.time; state.time = "all"; const ok = inTime(e); state.time = t; return ok; })
     .filter(e => !state.cats.size || state.cats.has(catOf(e)))
     .filter(matchesQuery)
@@ -641,7 +695,8 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
         }
         let ox = 0, oy = 0;
         if (list.length > 1) { const a = (i / list.length) * Math.PI * 2 - Math.PI / 2; ox = Math.cos(a) * 16; oy = Math.sin(a) * 16; }
-        const title = (e.title || "Event").length > 26 ? e.title.slice(0, 25) + "…" : (e.title || "Event");
+        let title = (e.title || "Event").length > 26 ? e.title.slice(0, 25) + "…" : (e.title || "Event");
+        if (stopsOf(e).length && e.id !== state.selected) title += ` · ${stopsOf(e).length + 1} stops`;
         const icon = L.divIcon({
           className: "",
           iconSize: [0, 0],
@@ -651,6 +706,23 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
         m.on("click", ev => { L.DomEvent.stopPropagation(ev); openCard(e.id); });
       });
     }
+    drawRoute();
+  }
+  // The night-out route only shows once its first pin is tapped
+  function drawRoute() {
+    const e = state.selected && findEvent(state.selected);
+    const st = stopsOf(e);
+    if (!e || !st.length) return;
+    const c = CATS[catOf(e)].color;
+    const pts = [[+e.lat, +e.lng], ...st.map(x => [+x.lat, +x.lng])];
+    L.polyline(pts, { color: "#ffffff", weight: 8, opacity: .8, lineCap: "round", interactive: false }).addTo(eventLayer);
+    L.polyline(pts, { color: c, weight: 4, dashArray: "1 10", lineCap: "round", interactive: false }).addTo(eventLayer);
+    st.forEach((x, i) => {
+      const t = new Date(x.time);
+      const icon = L.divIcon({ className: "", iconSize: [0, 0], html: `<div class="stopmark" style="--c:${c}">${i + 2}</div><span class="stop-label">${Number.isNaN(+t) ? "" : esc(hm(t)) + " · "}${esc(x.name || "Stop " + (i + 2))}</span>` });
+      const m = L.marker([+x.lat, +x.lng], { icon, zIndexOffset: 900 }).addTo(eventLayer);
+      m.on("click", ev => { L.DomEvent.stopPropagation(ev); openCard(e.id); });
+    });
   }
   function focusEvent(e) {
     const wide = window.matchMedia("(min-width: 900px)").matches;
@@ -726,7 +798,10 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
       when.append(h("b", null, dayKey(start) === dayKey(new Date()) ? "Today" : fmt(start, { weekday: "short", day: "numeric" })), h("strong", null, hm(start)));
       const what = h("span", "what"); const s = h("span", "s"); const dot = h("span", "dot"); dot.style.background = CATS[catOf(e)].color;
       s.append(dot, [e.is_private ? "Near " + (e.venue_name || "Durham") : e.venue_name, e.host].filter(Boolean).join(" · "));
-      what.append(h("span", "t", e.title || "Untitled event"), s);
+      const tt = h("span", "t", e.title || "Untitled event");
+      if (e.visibility === "link") tt.appendChild(h("span", "invite", "Invite only"));
+      if (stopsOf(e).length) s.append(` · ${stopsOf(e).length + 1} stops`);
+      what.append(tt, s);
       const n = goingCount(e.id);
       b.append(when, what, h("span", "goingpill" + (iAmGoing(e.id) ? " me" : ""), n ? `${n} going` : ""));
       b.onclick = () => { focusEvent(e); openCard(e.id); };
@@ -756,13 +831,13 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
   function refreshCard(open) {
     const ov = $("cardOverlay");
     if (!open && ov.hidden) return;
-    const e = state.events.find(x => x.id === state.selected);
+    const e = findEvent(state.selected);
     if (!e) { ov.hidden = true; return; }
     ov.textContent = "";
     const d = h("div", "dialog"); d.setAttribute("role", "dialog"); d.setAttribute("aria-modal", "true"); d.setAttribute("aria-labelledby", "cardTitle");
     const head = h("div", "dhead"); const left = h("div");
     const tag = h("span", "tag"); const dot = h("span", "dot"); dot.style.background = CATS[catOf(e)].color;
-    tag.append(dot, CATS[catOf(e)].label + (e.is_private ? " · Private" : ""));
+    tag.append(dot, CATS[catOf(e)].label + (e.is_private ? " · House party" : "") + (e.visibility === "link" ? " · Invite only" : ""));
     const h3 = h("h3", null, e.title || "Untitled event"); h3.id = "cardTitle";
     left.append(tag, h3);
     const close = h("button", "close", "×"); close.setAttribute("aria-label", "Close"); close.onclick = closeCard;
@@ -778,6 +853,33 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
     d.appendChild(facts);
     if (e.description) d.appendChild(h("p", "desc", e.description));
     if (e.is_private) d.appendChild(h("div", "note", "House party: the map shows a rough 150 m area, never the address. The host shares the exact door with people going."));
+    if (e.visibility === "link") d.appendChild(h("div", "note", "Invite only: this isn't on the public map. Only people with the link can see it."));
+    const st = stopsOf(e);
+    if (st.length) {
+      const rh = h("div", "routehead"); rh.append(h("span", "lbl2", "The route"), h("span", "hint", "Join at any stop"));
+      d.appendChild(rh);
+      const tl = h("ol", "timeline");
+      const all = [{ name: e.is_private ? "Near " + (e.venue_name || "Durham") : e.venue_name, time: e.start_at, lat: e.lat, lng: e.lng, priv: e.is_private }, ...st];
+      const now = Date.now(); let nextMarked = false;
+      all.forEach((x, i) => {
+        const t = new Date(x.time);
+        const li = h("li");
+        const later = all[i + 1] ? +new Date(all[i + 1].time) : +t + 3 * 3600e3;
+        if (later < now) li.classList.add("past");
+        else if (!nextMarked && +t > now - 0) { li.classList.add("next"); nextMarked = true; }
+        li.append(h("span", "stopnum", String(i + 1)), h("span", "mono", Number.isNaN(+t) ? "" : hm(t)), h("span", "nm", x.name || "Stop " + (i + 1)));
+        if (!x.priv) {
+          const a = h("a", "minilink", "Go");
+          a.href = `https://www.google.com/maps/dir/?api=1&destination=${(+x.lat).toFixed(6)},${(+x.lng).toFixed(6)}&travelmode=walking`;
+          a.target = "_blank"; a.rel = "noopener"; a.onclick = ev => ev.stopPropagation();
+          a.setAttribute("aria-label", `Directions to ${x.name || "stop " + (i + 1)}`);
+          li.appendChild(a);
+        } else li.appendChild(h("span"));
+        li.onclick = () => map.setView([+x.lat, +x.lng], Math.max(map.getZoom(), 16));
+        tl.appendChild(li);
+      });
+      d.appendChild(tl);
+    }
 
     const actions = h("div", "actions");
     const n = goingCount(e.id), mine = iAmGoing(e.id);
@@ -793,6 +895,17 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
       } catch (_) { go.disabled = false; toast("Couldn't save that. Try again."); }
     };
     actions.appendChild(go);
+    const shareBtn = h("button", "btn", "Share");
+    shareBtn.onclick = async () => {
+      const url = eventUrl(e.id);
+      if (navigator.share) {
+        try { await navigator.share({ title: e.title, text: `${e.title} · ${fmt(start, { weekday: "short", day: "numeric", month: "short" })} ${hm(start)}`, url }); return; }
+        catch (err) { if (err && err.name === "AbortError") return; }
+      }
+      try { await navigator.clipboard.writeText(url); toast("Link copied. Send it to your group."); }
+      catch (_) { toast(url); }
+    };
+    actions.appendChild(shareBtn);
     if (!e.is_private) {
       const a = h("a", "btn dark", "Directions");
       a.href = `https://www.google.com/maps/dir/?api=1&destination=${(+e.lat).toFixed(6)},${(+e.lng).toFixed(6)}&travelmode=walking`;
@@ -804,7 +917,7 @@ Western Hill|Western Hill|area|54.7820|-1.5870`;
       del.onclick = async () => {
         if (del.dataset.c !== "1") { del.dataset.c = "1"; del.textContent = "Tap again to delete"; return; }
         del.disabled = true;
-        try { await api.remove(e.id); state.events = state.events.filter(x => x.id !== e.id); closeCard(); renderAll(); toast("Event deleted"); }
+        try { await api.remove(e.id); state.events = state.events.filter(x => x.id !== e.id); state.linked.delete(e.id); closeCard(); renderAll(); toast("Event deleted"); }
         catch (_) { del.disabled = false; toast("Couldn't delete that. Try again."); }
       };
       actions.appendChild(del);
@@ -1051,6 +1164,72 @@ Use the event's own name as title (short, no emojis). Never guess a date or time
     const mmHint = h("span", "hint", "Drag the pin, or tap the map, to put it on the exact spot.");
     const mf = h("div", "field"); mf.append(mm, mmHint); form.appendChild(mf);
 
+    // Night-out route: extra stops, each with its own time
+    const route = h("div", "field");
+    route.append(h("span", "lbl", "Night-out route (optional)"), h("span", "hint", "Add where the night moves next, with times, so people can join later. Stop 1 is the place above."));
+    const stopList = h("div", "stops");
+    const addStop = h("button", "btn", "+ Add a stop"); addStop.type = "button";
+    route.append(stopList, addStop);
+    form.appendChild(route);
+    const stops = []; let activeStop = null, stopLayer = null;
+    const fillPlaces = selEl => {
+      for (const [cat, label] of Object.entries({ venue: "Bars and clubs", college: "Colleges", area: "Areas (house parties)", university: "University", sport: "Sport", landmark: "Around town", outdoor: "Outdoors" })) {
+        const og = h("optgroup"); og.label = label;
+        for (const pl2 of PLACES.filter(x => x.category === cat)) { const o = h("option", null, pl2.name); o.value = pl2.name; og.appendChild(o); }
+        selEl.appendChild(og);
+      }
+    };
+    function renderStops() {
+      stopList.textContent = "";
+      stops.forEach((x, i) => {
+        const n = i + 2;
+        const row = h("div", "stoprow" + (activeStop === i ? " active" : ""));
+        const t = h("input"); t.type = "time"; t.value = x.time || ""; t.setAttribute("aria-label", `Stop ${n} time`);
+        t.oninput = () => { x.time = t.value; };
+        const s2 = h("select"); s2.setAttribute("aria-label", `Stop ${n} place`);
+        const known = PLACE_BY_NAME.has(String(x.name || "").toLowerCase());
+        const o0 = h("option", null, x.lat != null && !known ? (x.name || "Pinned spot") : "Pick a spot"); o0.value = ""; s2.appendChild(o0);
+        fillPlaces(s2);
+        s2.value = known ? x.name : "";
+        s2.onchange = () => {
+          const pl2 = PLACE_BY_NAME.get(s2.value.toLowerCase()); if (!pl2) return;
+          Object.assign(x, { name: pl2.name, lat: pl2.lat, lng: pl2.lng }); activeStop = null;
+          drawMiniStops([pl2.lat, pl2.lng]); renderStops();
+          mmHint.textContent = `Stop ${n} set to ${pl2.name}. Drag its number on the map to fine-tune.`;
+        };
+        const pinB = h("button", "pinbtn", activeStop === i ? "Tap map" : "Pin"); pinB.type = "button";
+        pinB.setAttribute("aria-label", `Place stop ${n} by tapping the map`);
+        pinB.onclick = () => {
+          activeStop = activeStop === i ? null : i; renderStops();
+          mmHint.textContent = activeStop === null ? "Drag the pin, or tap the map, to put it on the exact spot." : `Tap the map to place stop ${n}.`;
+          if (activeStop !== null) mm.scrollIntoView({ block: "center", behavior: "smooth" });
+        };
+        const rm = h("button", "rmbtn", "×"); rm.type = "button"; rm.setAttribute("aria-label", `Remove stop ${n}`);
+        rm.onclick = () => { stops.splice(i, 1); activeStop = null; renderStops(); drawMiniStops(); };
+        row.append(h("span", "stopnum", String(n)), t, s2, pinB, rm);
+        stopList.appendChild(row);
+      });
+      addStop.hidden = stops.length >= 6;
+    }
+    function drawMiniStops(panTo) {
+      if (!miniMap) return;
+      if (stopLayer) stopLayer.clearLayers(); else stopLayer = L.layerGroup().addTo(miniMap);
+      const pts = pinLL ? [pinLL] : [];
+      stops.forEach((x, i) => {
+        if (x.lat == null) return;
+        pts.push([x.lat, x.lng]);
+        const m = L.marker([x.lat, x.lng], { draggable: true, icon: L.divIcon({ className: "", iconSize: [0, 0], html: `<div class="stopmark" style="--c:var(--hot)">${i + 2}</div>` }) }).addTo(stopLayer);
+        m.on("dragend", () => { const ll = m.getLatLng(); x.lat = ll.lat; x.lng = ll.lng; drawMiniStops(); });
+      });
+      if (pts.length > 1) L.polyline(pts, { color: "#7c3aed", weight: 3, dashArray: "1 9", lineCap: "round", interactive: false }).addTo(stopLayer);
+      if (panTo) miniMap.panTo(panTo);
+    }
+    addStop.onclick = () => {
+      stops.push({ time: "", name: "", lat: null, lng: null });
+      activeStop = stops.length - 1; renderStops();
+      mmHint.textContent = `Pick a spot for stop ${stops.length + 1}, or tap the map to place it.`;
+    };
+
     let pinLL = null, venueName = "";
     const matched = matchPlace(data.venue_match, data.venue_text);
     if (matched) { sel.value = matched.name; venueName = matched.name; pinLL = [matched.lat, matched.lng]; }
@@ -1064,6 +1243,16 @@ Use the event's own name as title (short, no emojis). Never guess a date or time
     const pl = h("label", "check"); pl.htmlFor = "fPrivate";
     const pt = h("span"); pt.append("Private address", h("small", null, "Show a rough 150 m area on the map instead of the exact spot."));
     pl.append(priv, pt); form.appendChild(pl);
+
+    // Who can see it
+    const vf2 = h("div", "field"); vf2.appendChild(h("span", "lbl", "Who can see it"));
+    const seg = h("div", "cats seg"); seg.setAttribute("role", "radiogroup"); seg.setAttribute("aria-label", "Who can see it");
+    for (const [val, label, sub] of [["public", "Public", "On the map for everyone"], ["link", "Invite only", "Only people you send the link to"]]) {
+      const r = h("input"); r.type = "radio"; r.name = "fVis"; r.id = "fVis-" + val; r.value = val; r.checked = val === "public";
+      const l = h("label"); l.htmlFor = r.id; l.append(h("strong", null, label), h("small", null, sub));
+      seg.append(r, l);
+    }
+    vf2.appendChild(seg); form.appendChild(vf2);
 
     const r2 = h("div", "row");
     const host = input("text", data.host || "", "College, society or @account"); host.maxLength = 60;
@@ -1089,12 +1278,23 @@ Use the event's own name as title (short, no emojis). Never guess a date or time
       pinLL = [ll[0], ll[1]];
       if (!marker) {
         marker = L.marker(pinLL, { draggable: true, icon: pinIcon, autoPan: true }).addTo(miniMap);
-        marker.on("dragend", () => { const p = marker.getLatLng(); pinLL = [p.lat, p.lng]; mmHint.textContent = "Pin moved. That's the spot people will see."; });
+        marker.on("dragend", () => { const p = marker.getLatLng(); pinLL = [p.lat, p.lng]; drawMiniStops(); mmHint.textContent = "Pin moved. That's the spot people will see."; });
       } else marker.setLatLng(pinLL);
       miniMap.setView(pinLL, zoom || Math.max(miniMap.getZoom(), 17));
+      drawMiniStops();
     };
     if (pinLL) setPin(pinLL, 17);
-    miniMap.on("click", ev => { setPin([ev.latlng.lat, ev.latlng.lng]); mmHint.textContent = "Pin placed. Drag it to fine-tune."; });
+    miniMap.on("click", ev => {
+      if (activeStop !== null && stops[activeStop]) {
+        const x = stops[activeStop], n = activeStop + 2;
+        Object.assign(x, { lat: ev.latlng.lat, lng: ev.latlng.lng });
+        if (!x.name || PLACE_BY_NAME.has(x.name.toLowerCase())) x.name = "Pinned spot";
+        activeStop = null; drawMiniStops(); renderStops();
+        mmHint.textContent = `Stop ${n} placed. Drag its number to fine-tune.`;
+        return;
+      }
+      setPin([ev.latlng.lat, ev.latlng.lng]); mmHint.textContent = "Pin placed. Drag it to fine-tune.";
+    });
     setTimeout(() => miniMap && miniMap.invalidateSize(), 60);
 
     sel.onchange = () => {
@@ -1135,7 +1335,17 @@ Use the event's own name as title (short, no emojis). Never guess a date or time
       if (!title.value.trim()) problems.push("an event name");
       if (!start) problems.push("a date and start time");
       if (!pinLL) problems.push("a place (pick one, search, or tap the map)");
+      stops.forEach((x, i) => { if (!x.time || x.lat == null) problems.push(`a time and place for stop ${i + 2} (or remove it)`); });
       if (problems.length) { err.textContent = "Add " + problems.join(", ") + " to post."; err.hidden = false; return; }
+      // stop times roll past midnight in order
+      let prev = start;
+      const stopsOut = stops.map(x => {
+        let t = londonDate(date.value, x.time);
+        while (t <= prev) t = new Date(+t + 864e5);
+        prev = t;
+        return { name: (x.name || "Pinned spot").slice(0, 80), time: t.toISOString(), lat: +x.lat.toFixed(6), lng: +x.lng.toFixed(6) };
+      });
+      const visibility = form.querySelector('input[name="fVis"]:checked')?.value === "link" ? "link" : "public";
       let end = en.value ? londonDate(date.value, en.value) : null;
       if (end && end <= start) end = new Date(+end + 864e5);
       let [lat, lng] = pinLL;
@@ -1153,13 +1363,22 @@ Use the event's own name as title (short, no emojis). Never guess a date or time
         is_private: priv.checked,
         host: host.value.trim() || null, price: price.value.trim() || null, description: desc.value.trim() || null,
         from_screenshot: !!fromShot,
+        visibility, stops: stopsOut,
       };
       post.disabled = true; post.textContent = "Posting…";
       try {
         const id = await api.create(ev2);
-        closeAdd(); toast("Posted to the map");
         const full = { id, ...ev2 };
-        if (!state.events.some(e => e.id === id)) state.events.push(full);
+        closeAdd();
+        if (visibility === "link") {
+          rememberLink(id); state.linked.set(id, full);
+          let copied = false;
+          try { await navigator.clipboard.writeText(eventUrl(id)); copied = true; } catch (_) {}
+          toast(copied ? "Posted. Invite link copied, send it to your group." : "Posted. Tap Share to send the invite link.");
+        } else {
+          toast("Posted to the map");
+          if (!state.events.some(e => e.id === id)) state.events.push(full);
+        }
         if (!inTime(full)) { state.time = "all"; renderChips(); }
         state.selected = id; renderAll(); focusEvent(full);
         refresh();
@@ -1188,7 +1407,15 @@ Use the event's own name as title (short, no emojis). Never guess a date or time
     b.innerHTML = "<strong>Demo mode.</strong> Events are saved on this phone only until the database is connected.";
     b.hidden = false;
   }
-  refresh();
+  const linkedId = new URLSearchParams(location.search).get("e");
+  if (linkedId) rememberLink(linkedId);
+  refresh().then(() => {
+    if (!linkedId) return;
+    const e = findEvent(linkedId);
+    if (!e) { toast("That event link has expired or was deleted."); return; }
+    if (!inTime(e)) { state.time = "all"; renderChips(); renderAll(); }
+    focusEvent(e); openCard(e.id);
+  });
   setInterval(() => { if (document.visibilityState === "visible" && LIVE) refresh(); }, 20000);
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && LIVE) refresh(); });
 })();
